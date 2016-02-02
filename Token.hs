@@ -10,6 +10,7 @@ module Token where
 data TokenType =
     T_IDENTIFIER |
     T_NUMBER |
+    T_STRING_LITERAL |
     T_INT |
     T_VOID |
     T_STRING |
@@ -28,12 +29,12 @@ data TokenType =
     T_CLOSE_BRACE |
     T_OPEN_PARENTHESIS |
     T_CLOSE_PARENTHESIS |
-    T_LT |
-    T_LEQ |
-    T_EQ |
-    T_NEQ |
-    T_GEQ |
-    T_GT |
+    T_LESS_THAN |
+    T_LESS_THAN_OR_EQUAL |
+    T_EQUAL |
+    T_NOT_EQUAL |
+    T_GREATER_THAN_OR_EQUAL |
+    T_GREATER_THAN |
     T_PLUS |
     T_HYPHEN |
     T_ASTERISK |
@@ -41,7 +42,7 @@ data TokenType =
     T_PERCENT |
     T_AMPERSAND |
     T_ASSIGNMENT |
-    T_EOF
+    T_END_OF_FILE
     deriving (Enum, Eq)
 
 instance Show TokenType where
