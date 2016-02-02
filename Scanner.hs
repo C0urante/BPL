@@ -1,11 +1,18 @@
+-- Chris Egerton
+-- February 1-2, 2016
+
+--      This is the Scanner module.
+--      The only external function it provides is tokenize, which takes source
+-- as a String and returns a list of Tokens.
+--      Errors may be thrown if unterminated comments or strings are found,
+-- or if invalid characters are encountered.
+
 import Token
 import Data.Maybe (fromJust)
-import Data.Char (isDigit, isSpace)
+import Data.Char (isDigit, isSpace, isAlpha, isAscii)
 import System.Environment (getArgs)
-import System.IO (hFlush, stdout)
 import qualified Data.Map as Map
 
--- int void string if else while return write writeln read
 keywords :: Map.Map String TokenType
 keywords = Map.fromList
     [("int", T_INT),
@@ -19,7 +26,6 @@ keywords = Map.fromList
      ("writeln", T_WRITELN),
      ("read", T_READ)]
 
--- ; , [ ] { } ( ) < <= == != >= > + - * / = % & /* */
 symbols :: Map.Map String TokenType
 symbols = Map.fromList
     [(";", T_SEMICOLON),
@@ -44,11 +50,11 @@ symbols = Map.fromList
      ("%", T_AMPERSAND),
      ("&", T_ASSIGNMENT)]
 
-isAlpha :: Char -> Bool
-isAlpha = (`elem` (['a'..'z'] ++ ['A'..'Z']))
+isAsciiAlpha :: Char -> Bool
+isAsciiAlpha c = isAscii c && isAlpha c
 
 isIdentifier :: Char -> Bool
-isIdentifier c = c == '_' || isDigit c || isAlpha c
+isIdentifier c = c == '_' || isDigit c || isAsciiAlpha c
 
 tokenize :: String -> [Token]
 tokenize s = reverse $ tokenizer s [] 1
@@ -67,7 +73,7 @@ tokenizer (c1:c2:source) acc line =
         then tokenizer (c2:source) ((symbolToken [c1] line):acc) line
     else if isDigit c1
         then parseNumber (c1:c2:source) acc line
-    else if isAlpha c1
+    else if isAsciiAlpha c1
         then parseWord (c1:c2:source) acc line
     else
         badCharacter c1 line
@@ -78,28 +84,34 @@ tokenizer (c1:source) acc line =
         then tokenizer source ((symbolToken [c1] line):acc) line
     else if isDigit c1
         then parseNumber (c1:source) acc line
-    else if isAlpha c1
+    else if isAsciiAlpha c1
         then parseWord (c1:source) acc line
     else
         badCharacter c1 line
 
 badCharacter :: Char -> Int -> [Token]
-badCharacter c line = error $ "Unrecognized character at line " ++ (show line) ++ ": '" ++ (c:"'")
+badCharacter c line =
+    error $ "Unrecognized character at line " ++ (show line) ++": '" ++ (c:"'")
 
 skipComment :: String -> [Token] -> Int -> [Token]
 skipComment ('*':'/':source) acc line = tokenizer source acc line
 skipComment ('\n':source) acc line = skipComment source acc (line + 1)
 skipComment (_:source) acc line = skipComment source acc line
-skipComment "" _ _ = error "Unterminated comment encountered, end of file reached."
+skipComment "" _ _ =
+    error "Unterminated comment encountered, " ++ "end of file reached."
 
 symbolToken :: String -> Int -> Token
 symbolToken value line = Token (fromJust $ Map.lookup value symbols) value line
+
+stringToken :: String -> Int -> Token
+stringToken = Token T_STRING_LITERAL
 
 numberToken :: String -> Int -> Token
 numberToken = Token T_NUMBER
 
 keywordToken :: String -> Int -> Token
-keywordToken value line = Token (fromJust $ Map.lookup value keywords) value line
+keywordToken value line =
+    Token (fromJust $ Map.lookup value keywords) value line
 
 identifierToken :: String -> Int -> Token
 identifierToken = Token T_IDENTIFIER
@@ -109,7 +121,7 @@ parseString source acc line = helper "" source acc line where
     helper _ "" _ _ =
         error "Unterminated string encountered, end of file reached."
     helper current ('"':source) acc line =
-        tokenizer source ((Token T_STRING_LITERAL (reverse current) line):acc) line
+        tokenizer source ((stringToken (reverse current) line):acc) line
     helper current ('\\':'\\':source) acc line =
         helper ('\\':current) source acc line
     helper current ('\\':'"':source) acc line =
@@ -118,14 +130,8 @@ parseString source acc line = helper "" source acc line where
         helper (c:current) source acc line
 
 parseNumber :: String -> [Token] -> Int -> [Token]
-parseNumber source acc line =
-    let (value, remainder) = span isDigit source
-        isValidDelimiter r = isSpace (head r) || Map.member (take 1 r) symbols || Map.member (take 2 r) symbols
-    in
-        if isValidDelimiter remainder
-            then tokenizer remainder ((numberToken value line):acc) line
-        else
-            error $ "Invalid delimiter encountered after number token: '" ++ ((head remainder):"'")
+parseNumber source acc line = let (value, remainder) = span isDigit source in
+    tokenizer remainder ((numberToken value line):acc) line
 
 parseWord :: String -> [Token] -> Int -> [Token]
 parseWord source acc line = let (value, remainder) = span isIdentifier source in
@@ -141,9 +147,6 @@ printTokens (t:ts) = do
     print t
     printTokens ts
 
--- You should turn in a program that asks the
--- user for the name of a BPL file, opens this file, and repeatedly calls getNextToken(), printing each
--- token found until it gets to the end of the file.
 main :: IO ()
 main = do
     args <- getArgs
