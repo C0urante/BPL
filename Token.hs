@@ -1,9 +1,11 @@
 -- Chris Egerton
--- February 1, 2016
+-- February 1-2, 2016
 
--- This is the Token module.
--- It contains definitions for the Token datatype as well as the TokenType enumerable datatype.
--- It also specifies useful printing behavior for both, in order to simplify debugging.
+--      This is the Token module.
+--      It contains definitions for the Token datatype as well as the enumerable
+-- TokenType datatype.
+--      It also specifies useful printing behavior for both, in order to
+-- simplify debugging.
 
 module Token where
 
@@ -53,7 +55,6 @@ data Token = Token {token_type  :: TokenType,
                     token_line  :: Int}
              deriving (Eq)
 
--- Token 100, string int, line number 3
 instance Show Token where
     show t = "Token " ++ (show $ token_type t) ++ ", " ++
              "string " ++ (token_value t) ++ ", " ++
