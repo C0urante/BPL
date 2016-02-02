@@ -5,3 +5,6 @@ Scanner: Scanner.hs Token.hs
 
 cleanup:
 	rm -f *.o *.hi
+
+clean: cleanup
+	rm -f Scanner
