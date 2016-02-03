@@ -60,7 +60,7 @@ tokenize :: String -> [Token]
 tokenize s = reverse $ tokenizer s [] 1
 
 tokenizer :: String -> [Token] -> Int -> [Token]
-tokenizer "" acc line = (Token T_END_OF_FILE "(EOF)" line):acc
+tokenizer "" acc line = (Token T_END_OF_FILE "" line):acc
 tokenizer ('\n':source) acc line = tokenizer source acc (line + 1)
 tokenizer ('"':source) acc line = parseString source acc line
 tokenizer ('/':'*':source) acc line = skipComment source acc line
@@ -129,6 +129,7 @@ parseString source acc line = helper "" source acc line where
     helper current (c:source) acc line =
         helper (c:current) source acc line
 
+-- TODO: Possibly disallow leading zeroes
 parseNumber :: String -> [Token] -> Int -> [Token]
 parseNumber source acc line = let (value, remainder) = span isDigit source in
     tokenizer remainder ((numberToken value line):acc) line
