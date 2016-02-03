@@ -48,7 +48,7 @@ data TokenType =
     deriving (Show, Enum, Eq)
 
 tokenNumber :: Token -> String
-tokenNumber = show . succ . fromEnum . token_type
+tokenNumber = show . (+ 100) . fromEnum . token_type
 
 data Token = Token {token_type  :: TokenType,
                     token_value :: String,
