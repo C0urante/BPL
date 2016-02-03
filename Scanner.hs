@@ -116,7 +116,6 @@ keywordToken value line =
 identifierToken :: String -> Int -> Token
 identifierToken = Token T_IDENTIFIER
 
--- TODO: Possibly disallow newlines
 parseString :: String -> [Token] -> Int -> [Token]
 parseString source acc line = helper "" source acc line where
     helper _ "" _ _ =
@@ -130,7 +129,6 @@ parseString source acc line = helper "" source acc line where
     helper current (c:source) acc line =
         helper (c:current) source acc line
 
--- TODO: Possibly disallow leading zeroes
 parseNumber :: String -> [Token] -> Int -> [Token]
 parseNumber source acc line = let (value, remainder) = span isDigit source in
     tokenizer remainder ((numberToken value line):acc) line
