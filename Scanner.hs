@@ -46,9 +46,9 @@ symbols = Map.fromList
      ("-", T_HYPHEN),
      ("*", T_ASTERISK),
      ("/", T_SLASH),
-     ("=", T_PERCENT),
-     ("%", T_AMPERSAND),
-     ("&", T_ASSIGNMENT)]
+     ("%", T_PERCENT),
+     ("&", T_AMPERSAND),
+     ("=", T_ASSIGNMENT)]
 
 isAsciiAlpha :: Char -> Bool
 isAsciiAlpha c = isAscii c && isAlpha c
@@ -98,7 +98,7 @@ skipComment ('*':'/':source) acc line = tokenizer source acc line
 skipComment ('\n':source) acc line = skipComment source acc (line + 1)
 skipComment (_:source) acc line = skipComment source acc line
 skipComment "" _ _ =
-    error "Unterminated comment encountered, " ++ "end of file reached."
+    error $ "Unterminated comment encountered, " ++ "end of file reached."
 
 symbolToken :: String -> Int -> Token
 symbolToken value line = Token (fromJust $ Map.lookup value symbols) value line
