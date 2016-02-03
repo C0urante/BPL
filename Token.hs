@@ -45,10 +45,10 @@ data TokenType =
     T_AMPERSAND |
     T_ASSIGNMENT |
     T_END_OF_FILE
-    deriving (Enum, Eq)
+    deriving (Show, Enum, Eq)
 
-instance Show TokenType where
-    show = show . succ . fromEnum
+tokenNumber :: Token -> String
+tokenNumber = show . succ . fromEnum . token_type
 
 data Token = Token {token_type  :: TokenType,
                     token_value :: String,
@@ -56,6 +56,6 @@ data Token = Token {token_type  :: TokenType,
              deriving (Eq)
 
 instance Show Token where
-    show t = "Token " ++ (show $ token_type t) ++ ", " ++
-             "string " ++ (token_value t) ++ ", " ++
+    show t = "Token " ++ (show $ token_type t) ++ " (" ++ (tokenNumber t) ++ "), " ++
+             "string \"" ++ (token_value t) ++ "\", " ++
              "line number " ++ (show $ token_line t)
