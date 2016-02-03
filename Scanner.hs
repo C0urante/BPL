@@ -1,5 +1,5 @@
 -- Chris Egerton
--- February 1-2, 2016
+-- February 1-3, 2016
 
 --      This is the Scanner module.
 --      The only external function it provides is tokenize, which takes source

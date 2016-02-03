@@ -1,5 +1,5 @@
 -- Chris Egerton
--- February 1-2, 2016
+-- February 1-3, 2016
 
 --      This is the Token module.
 --      It contains definitions for the Token datatype as well as the enumerable
