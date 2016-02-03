@@ -56,6 +56,6 @@ data Token = Token {token_type  :: TokenType,
              deriving (Eq)
 
 instance Show Token where
-    show t = "Token " ++ (show $ token_type t) ++ " (" ++ (tokenNumber t) ++ "), " ++
-             "string \"" ++ (token_value t) ++ "\", " ++
+    show t = "Token " ++ (show $ token_type t) ++ " (" ++ (tokenNumber t) ++
+             "), string \"" ++ (token_value t) ++ "\", " ++
              "line number " ++ (show $ token_line t)
