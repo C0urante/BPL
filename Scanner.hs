@@ -116,6 +116,7 @@ keywordToken value line =
 identifierToken :: String -> Int -> Token
 identifierToken = Token T_IDENTIFIER
 
+-- TODO: Possibly disallow newlines
 parseString :: String -> [Token] -> Int -> [Token]
 parseString source acc line = helper "" source acc line where
     helper _ "" _ _ =
