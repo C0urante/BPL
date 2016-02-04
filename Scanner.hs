@@ -126,6 +126,8 @@ parseString source acc line = helper "" source acc line where
         helper ('\\':current) source acc line
     helper current ('\\':'"':source) acc line =
         helper ('"':current) source acc line
+    helper current ('\n':source) acc line =
+        helper ('\n':current) source acc (line + 1)
     helper current (c:source) acc line =
         helper (c:current) source acc line
 
