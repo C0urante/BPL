@@ -126,7 +126,7 @@ parseString source acc line = helper "" source acc line where
         helper ('\\':current) source acc line
     helper current ('\\':'"':source) acc line =
         helper ('"':current) source acc line
-    helper current ('\\':c:_) _ _ line =
+    helper current ('\\':c:_) _ line =
         error $ "Unrecognized escape sequence: `\\" ++ (show c) ++
                 "' encountered at line " ++ (show line)
     helper current ('\n':source) acc line =
