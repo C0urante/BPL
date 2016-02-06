@@ -78,7 +78,6 @@ data LocalDecs =
 data StatementList =
     StatementList [Statement] | EmptyStatementList
     deriving (Eq, Show)
-
 -- 13. STATEMENT -> EXPRESSION_STMT
 --                | COMPOUND_STMT
 --                | IF_STMT
@@ -98,7 +97,6 @@ data Statement =
     ReturnStmt Expression | EmptyReturnStmt |
     WriteStmt Expression | WritelnStmt
     deriving (Eq, Show)
-
 -- -- 19. EXPRESSION -> VAR = EXPRESSION | COMP_EXP
 data Expression =
     AssignmentExpression Var Expression | Expression CompExp
