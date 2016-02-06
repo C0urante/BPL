@@ -46,7 +46,7 @@ data VarDec =
     deriving (Eq, Show)
 -- 5. TYPE_SPECIFIER -> int | void | string
 data TypeSpecifier =
-    Number | Void | String
+    IntType | VoidType | StringType
     deriving (Eq, Show)
 -- 6. FUN_DEC -> TYPE_SPECIFIER <id> ( PARAMS ) COMPOUND_STMT
 data FunDec =
