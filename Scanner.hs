@@ -148,6 +148,8 @@ parseWord source acc line = let (value, remainder) = span isIdentifier source in
         tokenizer remainder (identifierToken value line:acc) line
 
 printTokens :: [Token] -> IO ()
+printTokens [] =
+    error "End of Token list reached while printing. This should not happen."
 printTokens (t:ts)
     | tokenType t == T_END_OF_FILE = print t
     | otherwise = do
