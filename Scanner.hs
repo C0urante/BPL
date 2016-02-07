@@ -67,29 +67,29 @@ tokenizer "" acc line = Token T_END_OF_FILE "(EOF)" line:acc
 tokenizer ('\n':source) acc line = tokenizer source acc (line + 1)
 tokenizer ('"':source) acc line = parseString source acc line
 tokenizer ('/':'*':source) acc line = skipComment source acc line
-tokenizer (c1:c2:source) acc line =
-    if isSpace c1 then
+tokenizer (c1:c2:source) acc line
+    | isSpace c1 =
         tokenizer (c2:source) acc line
-    else if Map.member [c1, c2] symbols
-        then tokenizer source (symbolToken [c1, c2] line:acc) line
-    else if Map.member [c1] symbols
-        then tokenizer (c2:source) (symbolToken [c1] line:acc) line
-    else if isDigit c1
-        then parseNumber (c1:c2:source) acc line
-    else if isAsciiAlpha c1
-        then parseWord (c1:c2:source) acc line
-    else
+    | Map.member [c1, c2] symbols =
+        tokenizer source (symbolToken [c1, c2] line:acc) line
+    | Map.member [c1] symbols =
+        tokenizer (c2:source) (symbolToken [c1] line:acc) line
+    | isDigit c1 =
+        parseNumber (c1:c2:source) acc line
+    | isAsciiAlpha c1 =
+        parseWord (c1:c2:source) acc line
+    | otherwise =
         badCharacter c1 line
-tokenizer (c1:source) acc line =
-    if isSpace c1 then
+tokenizer (c1:source) acc line
+    | isSpace c1 =
         tokenizer source acc line
-    else if Map.member [c1] symbols
-        then tokenizer source (symbolToken [c1] line:acc) line
-    else if isDigit c1
-        then parseNumber (c1:source) acc line
-    else if isAsciiAlpha c1
-        then parseWord (c1:source) acc line
-    else
+    | Map.member [c1] symbols =
+        tokenizer source (symbolToken [c1] line:acc) line
+    | isDigit c1 =
+        parseNumber (c1:source) acc line
+    | isAsciiAlpha c1 =
+        parseWord (c1:source) acc line
+    | otherwise =
         badCharacter c1 line
 
 badCharacter :: Char -> Int -> [Token]
@@ -149,7 +149,7 @@ parseWord source acc line = let (value, remainder) = span isIdentifier source in
 
 printTokens :: [Token] -> IO ()
 printTokens (t:ts)
-    | token_type t == T_END_OF_FILE = print t
+    | tokenType t == T_END_OF_FILE = print t
     | otherwise = do
         print t
         printTokens ts
