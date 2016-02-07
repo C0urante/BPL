@@ -2,7 +2,6 @@ module Parser where
 
 import Token
 import Grammar
-import Data.Maybe
 
 -- IDEA: General structure of parsing functions:
 --   Only ever take in Token list and (except for top level function) callback
@@ -66,81 +65,113 @@ import Data.Maybe
 -- 1. PROGRAM -> DECLARATION_LIST
 parseProgram :: [Token] -> Program
 parseProgram = parseDeclarationList helper where
-    helper decs _ = Program decs
+    -- helper :: DeclarationList -> [Token] -> Program
+    helper decList _ = Program decList
 
 -- 2. DECLARATION_LIST -> DECLARATION_LIST DECLARATION | DECLARATION
 parseDeclarationList :: (DeclarationList -> [Token] -> a) -> [Token] -> a
 parseDeclarationList cb = parseDeclaration (helper []) where
     -- helper :: [Declaration] -> Declaration -> [Token] -> a
-    helper acc dec [Token T_END_OF_FILE _ _] =
-        cb (DeclarationList $ reverse (dec:acc)) []
-    helper acc dec ts = parseDeclaration (helper (dec:acc)) ts
+    helper acc dec [Token T_END_OF_FILE v l] =
+        cb (DeclarationList $ reverse (dec:acc)) [Token T_END_OF_FILE v l]
+    helper acc dec ts =
+        parseDeclaration (helper (dec:acc)) ts
 
 -- 3. DECLARATION -> VAR_DEC | FUN_DEC
-parseDeclaration :: (Declaration -> [Token] -> a) -> [Token] -> a
-parseDeclaration cb = parseVarDec varDecHelper where
-    -- varDecHelper :: Maybe VarDec -> [Token] -> a
-    varDecHelper Nothing ts = parseFunDec funDecHelper ts
-    varDecHelper (Just vdec) ts = cb (VarDecDeclaration vdec) ts
-    -- funDecHelper :: Maybe FunDec -> [Token] -> a
-    funDecHelper Nothing _ = error "Expected Declaration"
-    funDecHelper (Just fdec) ts = cb (FunDecDeclaration fdec) ts
-
 -- 4. VAR_DEC -> TYPE_SPECIFIER <id> ;
 --             | TYPE_SPECIFIER *<id> ;
 --             | TYPE_SPECIFIER <id>[ <num> ] ;
-parseVarDec :: (Maybe VarDec -> [Token] -> a) -> [Token] -> a
-parseVarDec cb [] = unexpectedEnd
-parseVarDec cb [Token T_END_OF_FILE v l] = cb Nothing [Token T_END_OF_FILE v l]
-parseVarDec cb tokens = parseTypeSpecifier helper tokens where
-    -- helper :: (Maybe TypeSpecifier) -> [Token] -> a
-    helper Nothing ts = cb Nothing ts
-    helper (Just t) (Token T_IDENTIFIER i _:
-                     Token T_SEMICOLON _ _:ts) =
-        cb (Just $ VarDec t RawVarDec i) ts
-    helper (Just t) (Token T_ASTERISK _ _:
-                     Token T_IDENTIFIER i _:
-                     Token T_SEMICOLON _ _:ts) =
-        cb (Just $ VarDec t PointerVarDec i) ts
-    helper (Just t) (Token T_IDENTIFIER i _:
-                     Token T_OPEN_BRACKET _ _:
-                     Token T_NUMBER n _:
-                     Token T_CLOSE_BRACKET _ _:
-                     Token T_SEMICOLON _ _:ts) =
-        cb (Just $ VarDec t (ArrayVarDec $ parseInt n) i) ts
+-- 6. FUN_DEC -> TYPE_SPECIFIER <id> ( PARAMS ) COMPOUND_STMT
+-- First consume type specification, identifier, and possibly metatype.
+-- Then, if parsing function declaration, consume parentheses, params, and
+--  compound statement, returning the resulting FunDec.
+parseDeclaration :: (Declaration -> [Token] -> a) -> [Token] -> a
+parseDeclaration cb = parseTypeSpecifier typeSpecifierHelper where
+    -- typeSpecifierHelper :: TypeSpecifier -> [Token] -> a
+    typeSpecifierHelper t (Token T_IDENTIFIER i _:
+                           Token T_SEMICOLON _ _:ts) =
+        cb (VarDecDeclaration $ VarDec t RawVarDec i) ts
+    typeSpecifierHelper t (Token T_ASTERISK _ _:
+                           Token T_IDENTIFIER i _:
+                           Token T_SEMICOLON _ _:ts) =
+        cb (VarDecDeclaration $ VarDec t PointerVarDec i) ts
+    typeSpecifierHelper t (Token T_IDENTIFIER i _:
+                           Token T_OPEN_BRACKET _ _:
+                           Token T_NUMBER n _:
+                           Token T_CLOSE_BRACKET _ _:
+                           Token T_SEMICOLON _ _:ts) =
+        cb (VarDecDeclaration $ VarDec t (ArrayVarDec $ parseInt n) i) ts
+    typeSpecifierHelper t (Token T_IDENTIFIER i _:
+                           Token T_OPEN_PARENTHESIS:ts) =
+        parseParams (paramsHelper t i) ts
+    typeSpecifierHelper _ (Token _ v l:ts) =
+        error $ "Line " ++ show l ++ ": " ++
+                "expected variable declaration or function declaration; " ++
+                "found " ++ show v ++ " instead"
+    -- paramsHelper :: TypeSpecifier -> Identifier -> Params -> [Token] -> a
+    paramsHelper t i p (Token T_CLOSE_PARENTHESIS _ _:ts) =
+        parseCompoundStmt (compoundStmtHelper t i p) ts
+    paramsHelper _ _ _ (Token _ v l:ts) =
+        error $ "Line " ++ show l ++
+                ": expected \")\"; " ++
+                "found " ++ show v ++ " instead"
+    -- compoundStmtHelper :: TypeSpecifier Identifier Param CompoundStmt -> a
+    compoundStmtHelper t i p c =
+        cb (FunDecDeclaration $ FunDec t i p c)
 
 -- 5. TYPE_SPECIFIER -> int | void | string
-parseTypeSpecifier :: (Maybe TypeSpecifier -> [Token] -> a) -> [Token] -> a
-parseTypeSpecifier cb [] = unexpectedEnd
-parseTypeSpecifier cb (Token T_INT _ _:ts) = cb (Just IntType) ts
-parseTypeSpecifier cb (Token T_STRING _ _:ts) = cb (Just StringType) ts
-parseTypeSpecifier cb (Token T_VOID _ _:ts) = cb (Just VoidType) ts
-parseTypeSpecifier cb ts = cb Nothing ts
-
--- 6. FUN_DEC -> TYPE_SPECIFIER <id> ( PARAMS ) COMPOUND_STMT
-parseFunDec :: (Maybe FunDec -> [Token] -> a) -> [Token] -> a
-parseFunDec cb [] = unexpectedEnd
-parseFunDec cb tokens = parseTypeSpecifier typeSpecifierHelper tokens where
-    -- typeSpecifierHelper :: (Maybe TypeSpecifier -> [Tokens] -> a) -> [Tokens] a
-    typeSpecifierHelper Nothing ts = cb Nothing ts
-    typeSpecifierHelper (Just t) (Token T_IDENTIFIER i l1:
-                                  Token T_OPEN_PARENTHESIS _ l2:ts) =
-        parseParams (paramsHelper (Token T_IDENTIFIER i l1:Token T_OPEN_PARENTHESIS "(" l2:ts)) ts
-    typeSpecifierHelper _ ts = cb Nothing ts
-    -- paramsHelper :: [Token] -> (Maybe Params -> [Token] -> a) -> [Token] -> a
-    paramsHelper ps Nothing ts = cb Nothing (ps:ts)
-    paramsHelper (Just p) (Token T_CLOSE_PARENTHESIS _ _:ts) =
-        parseCompoundStmt compoundStmtHelper ts
-    paramsHelper _ ts = cb Nothing ts
-    -- compoundStmtHelper :: (Maybe CompoundStmt -> [Token] -> a) -> [Token] -> a
-    compoundStmtHelper Nothing ts = cb Nothing ts
+parseTypeSpecifier :: (TypeSpecifier -> [Token] -> a) -> [Token] -> a
+parseTypeSpecifier cb (Token T_INT _ _:ts) = cb IntType ts
+parseTypeSpecifier cb (Token T_STRING _ _:ts) = cb StringType ts
+parseTypeSpecifier cb (Token T_VOID _ _:ts) = cb VoidType ts
+parseTypeSpecifier _ (Token _ v l:_) =
+    error $ "Line " ++ show l ++ ": " ++
+            "expected int, string, or void; " ++
+            "found " ++ show v ++ " instead"
 
 -- 7. PARAMS -> void | PARAM_LIST
+parseParams :: (Params -> [Token] -> a) -> [Token] -> a
+parseParams cb (Token T_VOID _ _:ts) = cb EmptyParams ts
+parseParams cb ts = parseParamList helper ts where
+    -- helper :: ParamList -> [Token] -> a
+    helper pl = cb (Params pl)
+
 -- 8. PARAM_LIST -> PARAM_LIST , PARAM | PARAM
+parseParamList :: (ParamList -> [Token] -> a) -> [Token] -> a
+parseParamList cb = parseParam (helper []) where
+    -- helper :: [Param] -> Param -> [Token] -> a
+    helper acc p (Token T_COMMA _ _:ts) = parseParam (helper (p:acc)) ts
+    helper acc p ts = cb (reverse (p:acc)) ts
+
 -- 9. PARAM -> TYPE_SPECIFIER <id>
 --           | TYPE_SPECIFIER *<id>
 --           | TYPE_SPECIFIER <id>[ ]
+parseParam :: (Param -> [Token] -> a) -> [Token] -> a
+parseParam cb = parseTypeSpecifier typeSpecifierHelper where
+    -- typeSpecifierHelper :: TypeSpecifier -> [Token] -> a
+    typeSpecifierHelper t (Token T_IDENTIFIER i _:
+                     Token T_OPEN_BRACKET _ _:
+                     Token T_CLOSE_BRACKET _ _:ts) =
+        cb (Param t ArrayParam i) ts
+    typeSpecifierHelper t (Token T_IDENTIFIER i _:ts) =
+        cb (Param t RawParam i) ts
+    typeSpecifierHelper t (Token T_ASTERISK _ _:
+                           Token T_IDENTIFIER i _:ts) =
+        cb (Param t PointerParam i) ts
+    typeSpecifierHelper _ (Token _ v l:ts) =
+        error $ "Line " ++ show l ++ ": " ++
+                "expected param; " ++
+                "found " ++ show v ++ " instead"
+
 -- 10. COMPOUND_STMT -> { LOCAL_DECS STATEMENT_LIST }
+parseCompoundStmt :: (CompoundStmt -> [Token] -> a) -> [Token] -> a
+parseCompoundStmt cb (Token T_OPEN_BRACE _ _:ts) =
+    parseLocalDecs localDecsHelper ts
+parseCompoundStmt _ (Token _ v l:ts) =
+    error $ "Line " ++ show l ++ ": " ++
+            "expected \"{\"; " ++
+            "found " ++ show v ++ " instead"
+
 -- 11. LOCAL_DECS -> LOCAL_DECS VAR_DEC | <empty>
 -- 12. STATEMENT_LIST -> STATEMENT_LIST STATEMENT | <empty>
 -- 13. STATEMENT -> EXPRESSION_STMT
@@ -178,13 +209,3 @@ parseFunDec cb tokens = parseTypeSpecifier typeSpecifierHelper tokens where
 
 parseInt :: String -> Int
 parseInt = read
-
-unexpectedToken :: TokenType -> TokenType -> Int -> a
-unexpectedToken t1 t2 line =
-    error $ "Line " ++ show line ++
-            ": expected token type " ++ show t1 ++
-            ", found type " ++ show t2 ++ " instead"
-
-unexpectedEnd :: a
-unexpectedEnd =
-    error "Encountered unexpected end of token stream (this should never happen)"
