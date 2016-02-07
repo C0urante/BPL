@@ -48,14 +48,14 @@ data TokenType =
     deriving (Show, Enum, Eq)
 
 tokenNumber :: Token -> String
-tokenNumber = show . (+ 100) . fromEnum . token_type
+tokenNumber = show . (+ 100) . fromEnum . tokenType
 
-data Token = Token {token_type  :: TokenType,
-                    token_value :: String,
-                    token_line  :: Int}
+data Token = Token {tokenType  :: TokenType,
+                    tokenValue :: String,
+                    tokenLine  :: Int}
              deriving (Eq)
 
 instance Show Token where
-    show t = "Token " ++ (show $ token_type t) ++ " (" ++ (tokenNumber t) ++
-             "), string \"" ++ (token_value t) ++ "\", " ++
-             "line number " ++ (show $ token_line t)
+    show t = "Token " ++ show (tokenType t) ++ " (" ++ tokenNumber t ++
+             "), string \"" ++ tokenValue t ++ "\", " ++
+             "line number " ++ show (tokenLine t)
