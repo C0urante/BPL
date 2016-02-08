@@ -92,6 +92,7 @@ data StatementList =
 -- 18. WRITE_STMT -> write ( EXRESSION ) ; | writeln ( ) ;
 data Statement =
     ExpressionStmt Expression | EmptyExpressionStmt |
+    CompoundStmtStmt CompoundStmt |
     IfStmt Expression Statement | IfElseStmt Expression Statement Statement |
     WhileStmt Expression Statement |
     ReturnStmt Expression | EmptyReturnStmt |
