@@ -1,4 +1,6 @@
 *.bpl
 *.o
 *.hi
+linecount
 Scanner
+Parse
