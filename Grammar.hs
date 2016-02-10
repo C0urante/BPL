@@ -108,16 +108,16 @@ data Var =
     deriving (Eq, Show)
 -- 21. COMP_EXP -> E RELOP E | E
 data CompExp =
-    CompExp E Relop E | SimpleExp E
+    CompExp E RelOp E | SimpleExp E
     deriving (Eq, Show)
 -- 22. RELOP -> <= | < | == | != | > | >=
-data Relop =
-    LessThanOrEqualRelop |
-    LessThanRelop |
-    EqualRelop |
-    NotEqualRelop |
-    GreaterThanRelop |
-    GreaterThanOrEqualRelop
+data RelOp =
+    LessThanOrEqualRelOp |
+    LessThanRelOp |
+    EqualRelOp |
+    NotEqualRelOp |
+    GreaterThanRelOp |
+    GreaterThanOrEqualRelOp
     deriving (Eq, Show)
 -- 23. E -> E ADDOP T | T
 data E =
