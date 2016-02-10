@@ -2,6 +2,7 @@ module Parser where
 
 import Token
 import Grammar
+import Data.Maybe (Maybe)
 
 -- IDEA: General structure of parsing functions:
 --   Only ever take in Token list and (except for top level function) callback
@@ -366,13 +367,13 @@ parseExpression cb (Token T_IDENTIFIER i _:
             error $ "Line " ++ show l ++ ": " ++
                     "expected \"]\"; " ++
                     "found " ++ show v ++ " instead"
-        -- assignmentHelper :: Identifier -> Expression -> [Token] -> a
-        assignmentHelper i e ts =
-            cb (AssignmentExpression $ Var i $ ArrayVar e)
+        -- assignmentHelper :: Identifier -> Expression -> -> Expression -> [Token] -> a
+        assignmentHelper i le re ts =
+            cb (AssignmentExpression (Var i $ ArrayVar le) re)
 parseExpression cb ts =
     parseCompExp helper ts where
         -- helper :: CompExp -> [Token] -> a
-        helper c = cb (Expression c)
+        helper c = cb (CompExpression c)
 
 -- 20. VAR -> <id> | <id>[ EXPRESSION ] | *<id>
 -- 21. COMP_EXP -> E RELOP E | E
@@ -381,7 +382,22 @@ parseExpression cb ts =
 -- 24. ADDOP -> + | -
 -- 25. T -> T MULOP F | F
 -- 26. MULOP -> * | / | %
+
 -- 27. F -> -F | &Factor | *Factor | Factor
+parseF :: (F -> [Token] -> a) -> [Token] -> a
+parseF cb (Token T_HYPHEN _ _:ts) = parseF helper ts where
+    -- helper :: F -> [Token] -> a
+    helper f = cb (NegativeF f)
+parseF cb (Token T_AMPERSAND _ _:ts) = parseFactor helper ts where
+    -- helper :: Factor -> [Token] -> a
+    helper f = cb (ReferenceF f)
+parseF cb (Token T_ASTERISK _ _:ts) = parseFactor helper ts where
+    -- helper :: Factor -> [Token] -> a
+    helper f = cb (DereferenceF f)
+parseF cb ts = parseFactor helper ts where
+    -- helper :: Factor -> [Token] -> a
+    helper f = cb (SimpleF f)
+
 -- 28. Factor -> ( EXPRESSION ) |
                 --  FUN_CALL |
                 --  read ( ) |
@@ -390,9 +406,81 @@ parseExpression cb ts =
                 --  <id>[EXPRESSION] |
                 --  <num> |
                 --  <string>
+parseFactor :: (Factor -> [Token] -> a) -> [Token] -> a
+parseFactor cb (Token T_READ _ _:
+                Token T_OPEN_PARENTHESIS _ _:
+                Token T_CLOSE_PARENTHESIS _ _:ts) =
+    cb ReadFactor ts
+parseFactor cb (Token T_ASTERISK _ _:
+                Token T_IDENTIFIER i _:ts) =
+    cb (DereferenceFactor i) ts
+parseFactor cb (Token T_IDENTIFIER i _:
+                Token T_OPEN_BRACKET _ _:ts) =
+    parseExpression (helper i) ts where
+        -- helper :: Identifier -> Expression -> [Token] -> a
+        helper i e (Token T_CLOSE_BRACKET _ _:ts) =
+            cb (ArrayReferenceFactor i e) ts
+        helper _ _ (Token _ v l:ts) =
+            error $ "Line " ++ show l ++ ": " ++
+                    "expected \"]\"; " ++
+                    "found " ++ show v ++ " instead"
+parseFactor cb (Token T_IDENTIFIER i l1
+                Token T_OPEN_PARENTHESIS p l2:ts) =
+    parseFunCall helper (Token T_IDENTIFIER i l1:
+                         Token T_OPEN_PARENTHESIS p l2:ts) where
+        -- helper :: FunCall -> [Token] -> a
+        helper f = cb (FunCallFactor f)
+parseFactor cb (Token T_IDENTIFIER i _:ts) =
+    cb (VarFactor i) ts
+parseFactor cb (Token T_OPEN_PARENTHESIS _ _:ts) =
+    parseExpression helper ts where
+        -- helper :: Expression -> [Token] -> a
+        helper e (Token T_CLOSE_PARENTHESIS _ _:ts) =
+            cb (ExpressionFactor e) ts
+        helper _ (Token _ v l:ts) =
+            error $ "Line " ++ show l ++ ": " ++
+                    "expected \")\"; " ++
+                    "found " ++ show v ++ " instead"
+parseFactor cb (Token T_NUMBER n _:ts) =
+    cb (NumberFactor $ parseInt n) ts
+parseFactor cb (Token T_STRING_LITERAL s _:ts) =
+    cb (StringFactor s) ts
+parseFactor _ (Token _ v l:ts) =
+    error $ "Line " ++ show l ++ ": " ++
+            "expected <factor>; " ++
+            "found " ++ show v ++ " instead"
+
 -- 29. FUN_CALL -> <id> ( ARGS )
+parseFunCall :: (FunCall -> [Token] -> a) -> [Token] -> a
+parseFunCall cb (Token T_IDENTIFIER i _:
+                 Token T_OPEN_PARENTHESIS _ _:ts) =
+    parseArgs helper ts where
+        -- helper :: Identifier -> Args -> [Token] -> a
+        helper i a (Token T_CLOSE_PARENTHESIS _ _:ts) =
+            cb (FunCall i a) ts
+        helper _ _ (Token _ v l:_) =
+            error $ "Line " ++ show l ++ ": " ++
+                    "expected \")\"; " ++
+                    "found " ++ show v ++ " instead"
+parseFunCall _ (Token _ v l:_) =
+    error $ "Line " ++ show l ++ ": " ++
+            "expected \"<id>(\"; " ++
+            "found " ++ show v ++ " instead"
+
 -- 30. ARGS -> ARG_LIST | <empty>
+parseArgs :: (Args -> [Token] -> a) -> [Token] -> a
+parseArgs cb (Token T_CLOSE_PARENTHESIS v l:ts) =
+    cb EmptyArgs (Token T_CLOSE_PARENTHESIS v l:ts)
+parseArgs cb ts = parseArgList helper ts where
+    -- helper :: ArgList -> [Token] -> a
+    helper al = cb (Args al)
+
 -- 31. ARG_LIST -> ARG_LIST , EXPRESSION | EXPRESSION
+parseArgList :: (ArgList -> [Token] -> a) -> [Token] -> a
+parseArgList cb = parseExpression (helper []) where
+    -- helper :: [Expression] -> Expression -> [Token] -> a
+    helper acc e (Token T_COMMA _ _:ts) = parseExpression (helper (e:acc)) ts
+    helper acc e ts = cb (ArgList $ reverse (e:acc)) ts
 
 parseInt :: String -> Int
 parseInt = read
