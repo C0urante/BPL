@@ -100,7 +100,7 @@ data Statement =
     deriving (Eq, Show)
 -- -- 19. EXPRESSION -> VAR = EXPRESSION | COMP_EXP
 data Expression =
-    AssignmentExpression Var Expression | Expression CompExp
+    AssignmentExpression Var Expression | CompExpression CompExp
     deriving (Eq, Show)
 -- 20. VAR -> <id> | <id>[ EXPRESSION ] | *<id>
 data Var =
