@@ -218,23 +218,3 @@ data Args =
 data ArgList =
     ArgList [Expression]
     deriving (Eq, Show)
-
-
--- data Statement =
---     ExpressionStmtStatement ExpressionStmt |
---     CompoundStmtStatement CompoundStmt |
---     IfStmtStatement IfStmt |
---     WhileStmfStatement WhileStmt |
---     ReturnStmfStatement ReturnStmt |
---     WriteStmfStatement WriteStmt
---
--- data ExpressionStmt = ExpressionStmt Expression | EmptyExpressionStmt
---
--- data IfStmt = IfStmt Expression Statement |
---               IfElseStmt Expression Statement Statement
---
--- data WhileStmt = WhileStmt Expression Statement
---
--- data ReturnStmt = ReturnStmt Expression | EmptyReturnStmt
---
--- data WriteStmt = WriteStmt Expression | WritelnStmt
