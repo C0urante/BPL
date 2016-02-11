@@ -45,8 +45,9 @@ parseDeclarationList cb = parseDeclaration (helper []) where
 --             | TYPE_SPECIFIER <id>[ <num> ] ;
 -- 6. FUN_DEC -> TYPE_SPECIFIER <id> ( PARAMS ) COMPOUND_STMT
 parseDeclaration :: (Declaration -> [Token] -> a) -> [Token] -> a
-parseDeclaration cb (token:tokens) = let t' = parseTypeSpecifier token in
-    case tokens of
+parseDeclaration cb = parseTypeSpecifier helper where
+    -- helper :: TypeSpecifier -> [Token] -> a
+    helper t' tokens = case tokens of
         -- TYPE_SPECIFIER <id> ;
         (Token T_IDENTIFIER i _:
          Token T_SEMICOLON _ _:ts) -> cb (VarDecDeclaration $ VarDec t' RawVarDec i) ts
@@ -82,7 +83,7 @@ parseDeclaration cb (token:tokens) = let t' = parseTypeSpecifier token in
 --             | TYPE_SPECIFIER *<id> ;
 --             | TYPE_SPECIFIER <id>[ <num> ] ;
 parseVarDec :: (VarDec -> [Token] -> a) -> [Token] -> a
-parseVarDec cb (token:tokens) = helper (parseTypeSpecifier token) tokens where
+parseVarDec cb = parseTypeSpecifier helper where
     -- helper :: TypeSpecifier -> [Token] -> a
     helper t (Token T_IDENTIFIER i _:
               Token T_SEMICOLON _ _:ts) =
@@ -103,11 +104,12 @@ parseVarDec cb (token:tokens) = helper (parseTypeSpecifier token) tokens where
                 "found " ++ show v ++ " instead"
 
 -- 5. TYPE_SPECIFIER -> int | void | string
-parseTypeSpecifier :: Token -> TypeSpecifier
-parseTypeSpecifier t = case tokenType t of
-    T_INT -> IntType
-    T_STRING -> StringType
-    T_VOID -> VoidType
+-- Callback style still used, in order to accurately report parsing errors
+parseTypeSpecifier :: (TypeSpecifier -> [Token] -> a) -> [Token] -> a
+parseTypeSpecifier cb (t:ts) = case tokenType t of
+    T_INT -> cb IntType ts
+    T_STRING -> cb StringType ts
+    T_VOID -> cb VoidType ts
     _ -> error $
         "Line " ++ show (tokenLine t) ++ ": " ++
         "expected int, string, or void; " ++
@@ -131,8 +133,7 @@ parseParamList cb = parseParam (helper []) where
 --           | TYPE_SPECIFIER *<id>
 --           | TYPE_SPECIFIER <id>[ ]
 parseParam :: (Param -> [Token] -> a) -> [Token] -> a
-parseParam cb (token:tokens) =
-    helper (parseTypeSpecifier token) tokens where
+parseParam cb = parseTypeSpecifier helper where
         -- helper :: TypeSpecifier -> [Token] -> a
         helper t (Token T_IDENTIFIER i _:
                          Token T_OPEN_BRACKET _ _:
@@ -271,7 +272,7 @@ parseReturnStmt cb tokens = parseExpression helper tokens where
                 "expected \";\"; " ++
                 "found " ++ show v ++ " instead"
 
--- 18. WRITE_STMT -> write ( EXRESSION ) ; | writeln ( ) ;
+-- 18. (1) WRITE_STMT -> write ( EXRESSION ) ; | writeln ( ) ;
 parseWriteStmt :: (Statement -> [Token] -> a) -> [Token] -> a
 parseWriteStmt cb (Token T_OPEN_PARENTHESIS _ _:tokens) =
     parseExpression helper tokens where
@@ -288,7 +289,7 @@ parseWriteStmt _ (Token _ v l:_) =
             "expected \"(\"; " ++
             "found " ++ show v ++ " instead"
 
--- 18. WRITE_STMT -> write ( EXRESSION ) ; | writeln ( ) ;
+-- 18. (2) WRITE_STMT -> write ( EXRESSION ) ; | writeln ( ) ;
 parseWritelnStmt :: (Statement -> [Token] -> a) -> [Token] -> a
 parseWritelnStmt cb (Token T_OPEN_PARENTHESIS _ _:
                      Token T_CLOSE_PARENTHESIS _ _:
