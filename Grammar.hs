@@ -1,11 +1,60 @@
 -- Chris Egerton
--- February 3, 2016
+-- February 3-10, 2016
 
 --      This is the Grammar module.
 --      Its sole purpose is to provide definitions for datatypes used in
 -- representing the grammar of BPL programmatically.
 
 module Grammar where
+
+-- 1. PROGRAM -> DECLARATION_LIST
+-- 2. DECLARATION_LIST -> DECLARATION_LIST DECLARATION | DECLARATION
+-- 3. DECLARATION -> VAR_DEC | FUN_DEC
+-- 4. VAR_DEC -> TYPE_SPECIFIER <id> ;
+--             | TYPE_SPECIFIER *<id> ;
+--             | TYPE_SPECIFIER <id>[ <num> ] ;
+-- 5. TYPE_SPECIFIER -> int | void | string
+-- 6. FUN_DEC -> TYPE_SPECIFIER <id> ( PARAMS ) COMPOUND_STMT
+-- 7. PARAMS -> void | PARAM_LIST
+-- 8. PARAM_LIST -> PARAM_LIST , PARAM | PARAM
+-- 9. PARAM -> TYPE_SPECIFIER <id>
+--           | TYPE_SPECIFIER *<id>
+--           | TYPE_SPECIFIER <id>[ ]
+-- 10. COMPOUND_STMT -> { LOCAL_DECS STATEMENT_LIST }
+-- 11. LOCAL_DECS -> LOCAL_DECS VAR_DEC | <empty>
+-- 12. STATEMENT_LIST -> STATEMENT_LIST STATEMENT | <empty>
+-- 13. STATEMENT -> EXPRESSION_STMT
+--                | COMPOUND_STMT
+--                | IF_STMT
+--                | WHILE_STMT
+--                | RETURN_STMT
+--                | WRITE_STMT
+-- 14. EXPRESSION_STMT -> EXPRESSION ; | ;
+-- 15. IF_STMT -> if ( EXPRESSION ) STATEMENT
+--              | if ( EXPRESSION ) STATEMENT else STATEMENT
+-- 16. WHILE_STMT -> while ( EXPRESSION ) statement
+-- 17. RETURN_STMT -> return ; | return EXPRESSION ;
+-- 18. WRITE_STMT -> write ( EXRESSION ) ; | writeln ( ) ;
+-- 19. EXPRESSION -> VAR = EXPRESSION | COMP_EXP
+-- 20. VAR -> <id> | <id>[ EXPRESSION ] | *<id>
+-- 21. COMP_EXP -> E RELOP E | E
+-- 22. RELOP -> <= | < | == | != | > | >=
+-- 23. E -> E ADDOP T | T
+-- 24. ADDOP -> + | -
+-- 25. T -> T MULOP F | F
+-- 26. MULOP -> * | / | %
+-- 27. F -> -F | &Factor | *Factor | Factor
+-- 28. Factor -> ( EXPRESSION ) |
+                --  FUN_CALL |
+                --  read ( ) |
+                --  *<id> |
+                --  <id> |
+                --  <id>[EXPRESSION] |
+                --  <num> |
+                --  <string>
+-- 29. FUN_CALL -> <id> ( ARGS )
+-- 30. ARGS -> ARG_LIST | <empty>
+-- 31. ARG_LIST -> ARG_LIST , EXPRESSION | EXPRESSION
 
 import Token
 
