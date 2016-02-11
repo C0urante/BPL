@@ -3,5 +3,9 @@
 *.hi
 linecount
 submit
+Token
 Scanner
+Grammar
 Parse
+ScannerTest
+ParserTest
