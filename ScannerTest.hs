@@ -1,4 +1,4 @@
-module ScannerTest where
+module Main where
 
 import Scanner
 import Token
