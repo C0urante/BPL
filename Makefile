@@ -1,16 +1,28 @@
-all: ScannerTest
+HC=ghc
+HCFLAGS=-O2
+
+all: ScannerTest ParserTest
+
+ParserTest: ParserTest.hs
+	$(HC) ParserTest.hs $(HCFLAGS)
+
+Parser: Parser.hs
+	$(HC) Parser.hs $(HCFLAGS)
+
+Grammar: Grammar.hs
+	$(HC) Grammar.hs $(HCFLAGS)
 
 ScannerTest: ScannerTest.hs Scanner.hs Token.hs
-	ghc ScannerTest -O2
+	$(HC) ScannerTest $(HCFLAGS)
 
 Scanner: Scanner.hs Token.hs
-	ghc Scanner.hs -O2
+	$(HC) Scanner.hs $(HCFLAGS)
 
 Token: Token.hs
-	ghc Token.hs -O2
+	$(HC) Token.hs $(HCFLAGS)
 
-cleanup:
+simple:
 	rm -f *.o *.hi
 
-clean: cleanup
-	rm -f Token Scanner ScannerTest
+clean: simple
+	rm -f Token Scanner ScannerTest Grammar Parser ParserTest
