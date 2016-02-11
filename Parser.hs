@@ -169,24 +169,24 @@ parseCompoundStmt _ (Token _ v l:_) =
 -- 11. LOCAL_DECS -> LOCAL_DECS VAR_DEC | <empty>
 parseLocalDecs :: (LocalDecs -> [Token] -> a) -> [Token] -> a
 parseLocalDecs cb (token:tokens)
-    | isTypeSpecifier token = parseVarDec (helper []) tokens
+    | isTypeSpecifier token = parseVarDec (helper []) (token:tokens)
     | otherwise = cb EmptyLocalDecs (token:tokens)
     where
         -- helper :: [VarDec] -> VarDec -> [Token] -> a
         helper acc v (t:ts)
-            | isTypeSpecifier t = parseVarDec (helper (v:acc)) ts
+            | isTypeSpecifier t = parseVarDec (helper (v:acc)) (t:ts)
             | otherwise = cb (LocalDecs $ reverse (v:acc)) (t:ts)
 
 -- 12. STATEMENT_LIST -> STATEMENT_LIST STATEMENT | <empty>
 parseStatementList :: (StatementList -> [Token] -> a) -> [Token] -> a
 parseStatementList cb (token:tokens)
-    | tokenType token == T_CLOSE_BRACKET = cb EmptyStatementList (token:tokens)
+    | tokenType token == T_CLOSE_BRACE = cb EmptyStatementList (token:tokens)
     | otherwise = parseStatement (helper []) (token:tokens)
     where
         -- helper :: [Statement] -> Statement -> [Token] -> a
         helper ss s (t:ts)
-            | tokenType t == T_CLOSE_BRACKET =
-                cb (StatementList $ reverse (s:ss)) ts
+            | tokenType t == T_CLOSE_BRACE =
+                cb (StatementList $ reverse (s:ss)) (t:ts)
             | otherwise =
                 parseStatement (helper (s:ss)) (t:ts)
 
@@ -204,7 +204,7 @@ parseStatement cb (token:tokens) = case tokenType token of
     T_WRITE -> parseWriteStmt cb tokens
     T_WRITELN -> parseWritelnStmt cb tokens
     T_OPEN_BRACE -> parseCompoundStmt (cb . CompoundStmtStmt) (token:tokens)
-    _ -> parseExpressionStmt cb tokens
+    _ -> parseExpressionStmt cb (token:tokens)
 
 -- 14. EXPRESSION_STMT -> EXPRESSION ; | ;
 parseExpressionStmt :: (Statement -> [Token] -> a) -> [Token] -> a
@@ -313,7 +313,7 @@ parseExpression cb tokens = case tokens of
     (Token T_IDENTIFIER i _:
      Token T_OPEN_BRACKET _ _:ts) -> parseExpression (arrayHelper tokens i) ts
     -- CompExp
-    _ -> parseCompExp (cb . CompExpression) tokens
+    _ -> parseCompExp (cb . SimpleExpression) tokens
     where
         -- assignmentHelper :: Var -> Expression -> [Token] -> a
         assignmentHelper v e = cb (AssignmentExpression v e)
@@ -322,7 +322,7 @@ parseExpression cb tokens = case tokens of
                            Token T_ASSIGNMENT _ _:ts) =
             parseExpression (assignmentHelper $ Var i $ ArrayVar e) ts
         arrayHelper backup _ _ (Token T_CLOSE_BRACKET _ _:_) =
-            parseCompExp (cb . CompExpression) backup
+            parseCompExp (cb . SimpleExpression) backup
         arrayHelper _ _ _ (t:_) = error $
             "Line " ++ show (tokenLine t) ++ ": " ++
             "expected \"<relop>\"; " ++
@@ -453,7 +453,12 @@ parseFactor cb tokens = case tokens of
         -- funCallHelper :: FunCall -> [Token] -> a
         funCallHelper = cb . FunCallFactor
         -- groupedHelper :: Expression -> [Token] -> a
-        groupedHelper = cb . GroupedFactor
+        groupedHelper e (t:ts)
+            | tokenType t == T_CLOSE_PARENTHESIS = cb (GroupedFactor e) ts
+            | otherwise = error $
+                "Line " ++ show (tokenLine t) ++ ": " ++
+                "expected \")\"; " ++
+                "found " ++ show (tokenValue t) ++ " instead"
 
 -- 29. FUN_CALL -> <id> ( ARGS )
 parseFunCall :: (FunCall -> [Token] -> a) -> [Token] -> a
