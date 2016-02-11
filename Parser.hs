@@ -45,39 +45,38 @@ parseDeclarationList cb = parseDeclaration (helper []) where
 --             | TYPE_SPECIFIER <id>[ <num> ] ;
 -- 6. FUN_DEC -> TYPE_SPECIFIER <id> ( PARAMS ) COMPOUND_STMT
 parseDeclaration :: (Declaration -> [Token] -> a) -> [Token] -> a
-parseDeclaration cb (token:tokens) =
-    typeSpecifierHelper (parseTypeSpecifier token) tokens where
-        -- typeSpecifierHelper :: TypeSpecifier -> [Token] -> a
-        typeSpecifierHelper t (Token T_IDENTIFIER i _:
-                               Token T_SEMICOLON _ _:ts) =
-            cb (VarDecDeclaration $ VarDec t RawVarDec i) ts
-        typeSpecifierHelper t (Token T_ASTERISK _ _:
-                               Token T_IDENTIFIER i _:
-                               Token T_SEMICOLON _ _:ts) =
-            cb (VarDecDeclaration $ VarDec t PointerVarDec i) ts
-        typeSpecifierHelper t (Token T_IDENTIFIER i _:
-                               Token T_OPEN_BRACKET _ _:
-                               Token T_NUMBER n _:
-                               Token T_CLOSE_BRACKET _ _:
-                               Token T_SEMICOLON _ _:ts) =
-            cb (VarDecDeclaration $ VarDec t (ArrayVarDec $ parseInt n) i) ts
-        typeSpecifierHelper t (Token T_IDENTIFIER i _:
-                               Token T_OPEN_PARENTHESIS _ _:ts) =
-            parseParams (paramsHelper t i) ts
-        typeSpecifierHelper _ (Token _ v l:_) =
-            error $ "Line " ++ show l ++ ": " ++
-                    "expected variable declaration or function declaration; " ++
-                    "found " ++ show v ++ " instead"
-        -- paramsHelper :: TypeSpecifier -> Identifier -> Params -> [Token] -> a
-        paramsHelper t i p (Token T_CLOSE_PARENTHESIS _ _:ts) =
-            parseCompoundStmt (compoundStmtHelper t i p) ts
-        paramsHelper _ _ _ (Token _ v l:_) =
-            error $ "Line " ++ show l ++
-                    ": expected \")\"; " ++
-                    "found " ++ show v ++ " instead"
-        -- compoundStmtHelper :: TypeSpecifier Identifier Param CompoundStmt -> a
-        compoundStmtHelper t i p c =
-            cb (FunDecDeclaration $ FunDec t i p c)
+parseDeclaration cb (token:tokens) = let t' = parseTypeSpecifier token in
+    case tokens of
+        -- TYPE_SPECIFIER <id> ;
+        (Token T_IDENTIFIER i _:
+         Token T_SEMICOLON _ _:ts) -> cb (VarDecDeclaration $ VarDec t' RawVarDec i) ts
+        -- TYPE_SPECIFIER * <id> ;
+        (Token T_ASTERISK _ _:
+         Token T_IDENTIFIER i _:
+         Token T_SEMICOLON _ _:ts) -> cb (VarDecDeclaration $ VarDec t' PointerVarDec i) ts
+        -- TYPE_SPECIFIER <id> [ <num> ] ;
+        (Token T_IDENTIFIER i _:
+         Token T_OPEN_BRACKET _ _:
+         Token T_NUMBER n _:
+         Token T_CLOSE_BRACKET _ _:
+         Token T_SEMICOLON _ _:ts) -> cb (VarDecDeclaration $ VarDec t' (ArrayVarDec $ parseInt n) i) ts
+        -- TYPE_SPECIFIER <id> ( PARAMS ) COMPOUND_STMT
+        (Token T_IDENTIFIER identifier _:
+         Token T_OPEN_PARENTHESIS _ _:ts) -> parseParams (paramsHelper identifier) ts where
+            -- paramsHelper :: Identifier -> Params -> [Token] -> a
+            paramsHelper i p (Token T_CLOSE_PARENTHESIS _ _:ts') =
+                parseCompoundStmt (compoundStmtHelper i p) ts'
+            paramsHelper _ _ (Token _ v l:_) = error $
+                "Line " ++ show l ++
+                ": expected \")\"; " ++
+                "found " ++ show v ++ " instead"
+            -- compoundStmtHelper :: Identifier -> Param -> CompoundStmt -> [Token] -> a
+            compoundStmtHelper i p c =
+                 cb (FunDecDeclaration $ FunDec t' i p c)
+        (t:_) ->  error $
+            "Line " ++ show (tokenLine t) ++
+            ": expected \"<vardec> or <fundec>\"; " ++
+            "found " ++ show (tokenValue t) ++ " instead"
 
 -- 4. VAR_DEC -> TYPE_SPECIFIER <id> ;
 --             | TYPE_SPECIFIER *<id> ;
@@ -198,17 +197,14 @@ parseStatementList cb (token:tokens)
 --                | RETURN_STMT
 --                | WRITE_STMT
 parseStatement :: (Statement -> [Token] -> a) -> [Token] -> a
-parseStatement cb (Token T_IF _ _:ts) = parseIfStmt cb ts
-parseStatement cb (Token T_WHILE _ _:ts) = parseWhileStmt cb ts
-parseStatement cb (Token T_RETURN _ _:ts) = parseReturnStmt cb ts
-parseStatement cb (Token T_WRITE _ _:ts) = parseWriteStmt cb ts
-parseStatement cb (Token T_WRITELN _ _:ts) = parseWritelnStmt cb ts
-parseStatement cb (Token T_OPEN_BRACE v l:ts) =
-    parseCompoundStmt helper (Token T_OPEN_BRACE v l:ts) where
-        -- helper :: CompoundStmt -> [Token] -> a
-        helper c = cb (CompoundStmtStmt c)
-parseStatement cb ts =
-    parseExpressionStmt cb ts
+parseStatement cb (token:tokens) = case tokenType token of
+    T_IF -> parseIfStmt cb tokens
+    T_WHILE -> parseWhileStmt cb tokens
+    T_RETURN -> parseReturnStmt cb tokens
+    T_WRITE -> parseWriteStmt cb tokens
+    T_WRITELN -> parseWritelnStmt cb tokens
+    T_OPEN_BRACE -> parseCompoundStmt (cb . CompoundStmtStmt) (token:tokens)
+    _ -> parseExpressionStmt cb tokens
 
 -- 14. EXPRESSION_STMT -> EXPRESSION ; | ;
 parseExpressionStmt :: (Statement -> [Token] -> a) -> [Token] -> a
