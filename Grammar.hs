@@ -148,7 +148,7 @@ data F =
                 --  <num> |
                 --  <string>
 data Factor =
-    ExpressionFactor Expression |
+    GroupedFactor Expression |
     FunCallFactor FunCall |
     ReadFactor |
     DereferenceFactor Identifier |
