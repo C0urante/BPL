@@ -1,5 +1,5 @@
 -- Chris Egerton
--- February 3-10, 2016
+-- February 3-11, 2016
 
 --      This is the Grammar module.
 --      Its sole purpose is to provide definitions for datatypes used in
@@ -56,7 +56,7 @@ module Grammar where
 -- 30. ARGS -> ARG_LIST | <empty>
 -- 31. ARG_LIST -> ARG_LIST , EXPRESSION | EXPRESSION
 
-import Token
+import Token()
 
 type Identifier = String
 data VarDecMetaType =
