@@ -59,6 +59,7 @@ module Grammar where
 import Token()
 
 type Identifier = String
+type LineNumber = Int
 data VarDecMetaType =
     RawVarDec |
     PointerVarDec |
@@ -77,55 +78,55 @@ data VarMetaType =
 
 -- 1. PROGRAM -> DECLARATION_LIST
 data Program =
-    Program DeclarationList
+    Program DeclarationList LineNumber
     deriving (Eq, Show)
 -- 2. DECLARATION_LIST -> DECLARATION_LIST DECLARATION | DECLARATION
 data DeclarationList =
-    DeclarationList [Declaration]
+    DeclarationList [Declaration] LineNumber
     deriving (Eq, Show)
 -- 3. DECLARATION -> VAR_DEC | FUN_DEC
 data Declaration =
-    VarDecDeclaration VarDec | FunDecDeclaration FunDec
+    VarDecDeclaration VarDec LineNumber | FunDecDeclaration FunDec LineNumber
     deriving (Eq, Show)
 -- 4. VAR_DEC -> TYPE_SPECIFIER <id> ;
 --             | TYPE_SPECIFIER *<id> ;
 --             | TYPE_SPECIFIER <id>[ <num> ] ;
 data VarDec =
-    VarDec TypeSpecifier VarDecMetaType Identifier
+    VarDec TypeSpecifier VarDecMetaType Identifier LineNumber
     deriving (Eq, Show)
 -- 5. TYPE_SPECIFIER -> int | void | string
 data TypeSpecifier =
-    IntType | VoidType | StringType
+    IntType LineNumber | VoidType LineNumber | StringType LineNumber
     deriving (Eq, Show)
 -- 6. FUN_DEC -> TYPE_SPECIFIER <id> ( PARAMS ) COMPOUND_STMT
 data FunDec =
-    FunDec TypeSpecifier Identifier Params CompoundStmt
+    FunDec TypeSpecifier Identifier Params CompoundStmt LineNumber
     deriving (Eq, Show)
 -- 7. PARAMS -> void | PARAM_LIST
 data Params =
-    Params ParamList | EmptyParams
+    Params ParamList LineNumber | EmptyParams LineNumber
     deriving (Eq, Show)
 -- 8. PARAM_LIST -> PARAM_LIST , PARAM | PARAM
 data ParamList =
-    ParamList [Param]
+    ParamList [Param] LineNumber
     deriving (Eq, Show)
 -- 9. PARAM -> TYPE_SPECIFIER <id>
 --           | TYPE_SPECIFIER *<id>
 --           | TYPE_SPECIFIER <id>[ ]
 data Param =
-    Param TypeSpecifier ParamMetaType Identifier
+    Param TypeSpecifier ParamMetaType Identifier LineNumber
     deriving (Eq, Show)
 -- 10. COMPOUND_STMT -> { LOCAL_DECS STATEMENT_LIST }
 data CompoundStmt =
-    CompoundStmt LocalDecs StatementList
+    CompoundStmt LocalDecs StatementList LineNumber
     deriving (Eq, Show)
 -- 11. LOCAL_DECS -> LOCAL_DECS VAR_DEC | <empty>
 data LocalDecs =
-    LocalDecs [VarDec] | EmptyLocalDecs
+    LocalDecs [VarDec] LineNumber | EmptyLocalDecs LineNumber
     deriving (Eq, Show)
 -- 12. STATEMENT_LIST -> STATEMENT_LIST STATEMENT | <empty>
 data StatementList =
-    StatementList [Statement] | EmptyStatementList
+    StatementList [Statement] LineNumber | EmptyStatementList LineNumber
     deriving (Eq, Show)
 -- 13. STATEMENT -> EXPRESSION_STMT
 --                | COMPOUND_STMT
@@ -140,53 +141,61 @@ data StatementList =
 -- 17. RETURN_STMT -> return ; | return EXPRESSION ;
 -- 18. WRITE_STMT -> write ( EXRESSION ) ; | writeln ( ) ;
 data Statement =
-    ExpressionStmt Expression | EmptyExpressionStmt |
-    CompoundStmtStmt CompoundStmt |
-    IfStmt Expression Statement | IfElseStmt Expression Statement Statement |
-    WhileStmt Expression Statement |
-    ReturnStmt Expression | EmptyReturnStmt |
-    WriteStmt Expression | WritelnStmt
+    ExpressionStmt Expression LineNumber |
+    EmptyExpressionStmt LineNumber |
+    CompoundStmtStmt CompoundStmt LineNumber |
+    IfStmt Expression Statement LineNumber |
+    IfElseStmt Expression Statement Statement LineNumber |
+    WhileStmt Expression Statement LineNumber |
+    ReturnStmt Expression LineNumber |
+    EmptyReturnStmt LineNumber |
+    WriteStmt Expression LineNumber |
+    WritelnStmt LineNumber
     deriving (Eq, Show)
 -- -- 19. EXPRESSION -> VAR = EXPRESSION | COMP_EXP
 data Expression =
-    AssignmentExpression Var Expression | SimpleExpression CompExp
+    AssignmentExpression Var Expression LineNumber |
+    SimpleExpression CompExp LineNumber
     deriving (Eq, Show)
 -- 20. VAR -> <id> | <id>[ EXPRESSION ] | *<id>
 data Var =
-    Var Identifier VarMetaType
+    Var Identifier VarMetaType LineNumber
     deriving (Eq, Show)
 -- 21. COMP_EXP -> E RELOP E | E
 data CompExp =
-    CompExp E RelOp E | SimpleExp E
+    CompExp E RelOp E LineNumber | SimpleExp E LineNumber
     deriving (Eq, Show)
 -- 22. RELOP -> <= | < | == | != | > | >=
 data RelOp =
-    LessThanOrEqualRelOp |
-    LessThanRelOp |
-    EqualRelOp |
-    NotEqualRelOp |
-    GreaterThanRelOp |
-    GreaterThanOrEqualRelOp
+    LessThanOrEqualRelOp LineNumber |
+    LessThanRelOp LineNumber |
+    EqualRelOp LineNumber |
+    NotEqualRelOp LineNumber |
+    GreaterThanRelOp LineNumber |
+    GreaterThanOrEqualRelOp LineNumber
     deriving (Eq, Show)
 -- 23. E -> E ADDOP T | T
 data E =
-    AddE E AddOp T | SimpleE T
+    AddE E AddOp T LineNumber | SimpleE T LineNumber
     deriving (Eq, Show)
 -- 24. ADDOP -> + | -
 data AddOp =
-    PlusAddOp | MinusAddOp
+    PlusAddOp LineNumber | MinusAddOp LineNumber
     deriving (Eq, Show)
 -- 25. T -> T MULOP F | F
 data T =
-    MulT T MulOp F | SimpleT F
+    MulT T MulOp F LineNumber | SimpleT F LineNumber
     deriving (Eq, Show)
 -- 26. MULOP -> * | / | %
 data MulOp =
-    TimesMulOp | DivMulOp | ModMulOp
+    TimesMulOp LineNumber | DivMulOp LineNumber | ModMulOp LineNumber
     deriving (Eq, Show)
 -- 27. F -> -F | &Factor | *Factor | Factor
 data F =
-    NegativeF F | ReferenceF Factor | DereferenceF Factor | SimpleF Factor
+    NegativeF F LineNumber |
+    ReferenceF Factor LineNumber |
+    DereferenceF Factor LineNumber |
+    SimpleF Factor LineNumber
     deriving (Eq, Show)
 -- 28. Factor -> ( EXPRESSION ) |
                 --  FUN_CALL |
@@ -197,24 +206,24 @@ data F =
                 --  <num> |
                 --  <string>
 data Factor =
-    GroupedFactor Expression |
-    FunCallFactor FunCall |
-    ReadFactor |
-    DereferenceFactor Identifier |
-    VarFactor Identifier |
-    ArrayReferenceFactor Identifier Expression |
-    NumberFactor Int |
-    StringFactor String
+    GroupedFactor Expression LineNumber |
+    FunCallFactor FunCall LineNumber |
+    ReadFactor LineNumber |
+    DereferenceFactor Identifier LineNumber |
+    VarFactor Identifier LineNumber |
+    ArrayReferenceFactor Identifier Expression LineNumber |
+    NumberFactor Int LineNumber |
+    StringFactor String LineNumber
     deriving (Eq, Show)
 -- 29. FUN_CALL -> <id> ( ARGS )
 data FunCall =
-    FunCall Identifier Args
+    FunCall Identifier Args LineNumber
     deriving (Eq, Show)
 -- 30. ARGS -> ARG_LIST | <empty>
 data Args =
-    Args ArgList | EmptyArgs
+    Args ArgList LineNumber | EmptyArgs LineNumber
     deriving (Eq, Show)
 -- 31. ARG_LIST -> ARG_LIST , EXPRESSION | EXPRESSION
 data ArgList =
-    ArgList [Expression]
+    ArgList [Expression] LineNumber
     deriving (Eq, Show)
