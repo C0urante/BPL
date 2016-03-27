@@ -330,7 +330,8 @@ parseExpression cb tokens = case tokens of
      Token T_ASSIGNMENT _ _:ts) -> parseExpression (assignmentHelper $ Var i RawVar line) ts
     -- * <id> = Expression
     (Token T_ASTERISK _ _:
-     Token T_IDENTIFIER i _:ts) -> parseExpression (assignmentHelper $ Var i PointerVar line) ts
+     Token T_IDENTIFIER i _:
+     Token T_ASSIGNMENT _ _:ts) -> parseExpression (assignmentHelper $ Var i PointerVar line) ts
     -- <id> [ => <id> [ Expression ] (=?)
     (Token T_IDENTIFIER i _:
      Token T_OPEN_BRACKET _ _:ts) -> parseExpression (arrayHelper tokens i) ts
