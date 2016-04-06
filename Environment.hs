@@ -59,3 +59,7 @@ lookup (GlobalScope e) i = case Map.lookup i e of
 lookup (NestedScope e s) i = case Map.lookup i e of
     (Just t) -> t
     Nothing -> Environment.lookup s i
+
+contains :: Scope -> Identifier -> Bool
+contains (GlobalScope e) i   = Map.member i e
+contains (NestedScope e s) i = Map.member i e || contains s i
