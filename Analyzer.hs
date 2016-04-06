@@ -27,7 +27,25 @@ assignTypes (Program (DeclarationList ds _) _) =
     declarationHelper ds (Env.GlobalScope Env.emptyEnvironment)
 
 declarationHelper :: [Declaration] -> Env.Scope -> [ScopedStatementList]
-declarationHelper [] _ = []
+declarationHelper [] s = verifiedResult where
+    hasMain = Env.contains s "main"
+    mainType =
+        if hasMain
+            then Env.lookup s "main"
+            else error "Program must contain main function"
+    mainFun =
+        case mainType of
+            (Env.Function f) -> f
+            (Env.Variable _) -> error "Identifier main must correspond to function at global scope"
+    mainHasVoidReturn  =
+        case mainFun of
+            (Env.VoidFun, _) -> True
+            _ -> error "Function main must have return type void"
+    mainHasVoidArgs =
+        case mainFun of
+            (_, []) -> True
+            _ -> error "Function main cannot take any arguments"
+    verifiedResult = seq (mainHasVoidReturn && mainHasVoidArgs) []
 declarationHelper (VarDecDeclaration v _:ds) s =
     declarationHelper ds (addVarToScope s v)
 declarationHelper (FunDecDeclaration f _:ds) s =
