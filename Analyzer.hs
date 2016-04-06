@@ -117,16 +117,22 @@ extractVarLine (VarDec _ _ _ result) = result
 
 extractVarType :: VarDec -> Env.Type
 extractVarType (VarDec t m i l) = result where
-    var = (rawType t, metaType m)
+    var = (rawType, metaType)
     debugMessage = "Line " ++ show l ++ ": variable " ++ i ++ " assigned type " ++ Env.showVar var
     result = debug debugMessage $ Env.Variable var
-    rawType (IntType _) = Env.IntVar
-    rawType (StringType _) = Env.StringVar
-    rawType (VoidType _) =
-        error $ "Cannot assign void type to variable " ++ i ++ " declared at line " ++ show l
-    metaType RawVarDec = Env.RawVar
-    metaType PointerVarDec = Env.PointerVar
-    metaType (ArrayVarDec _) = Env.ArrayVar
+    rawType = extractRawVarType t i l
+    metaType = extractMetaVarType m
+
+extractRawVarType :: TypeSpecifier -> Identifier -> LineNumber -> Env.VarType
+extractRawVarType (IntType _) _ _ = Env.IntVar
+extractRawVarType (StringType _) _ _ = Env.StringVar
+extractRawVarType (VoidType _) i l =
+    error $ "Cannot assign void type to variable " ++ i ++ " declared at line " ++ show l
+
+extractMetaVarType :: VarDecMetaType -> Env.VarMetaType
+extractMetaVarType RawVarDec = Env.RawVar
+extractMetaVarType PointerVarDec = Env.PointerVar
+extractMetaVarType (ArrayVarDec _) = Env.ArrayVar
 
 addFunToScope :: Env.Scope -> FunDec -> Env.Scope
 addFunToScope s f = Env.addToScope s i t where
@@ -172,26 +178,21 @@ extractParamName (Param _ _ result _) = result
 
 extractParamType :: Param -> Env.Type
 extractParamType (Param t m i l) = result where
-    var = (rawType t, metaType m)
+    var = (rawType, metaType)
     debugMessage = "Line " ++ show l ++ ": variable " ++ i ++ " assigned type " ++ Env.showVar var
     result = debug debugMessage $ Env.Variable var
-    rawType (IntType _) = Env.IntVar
-    rawType (StringType _) = Env.StringVar
-    rawType (VoidType _) =
-        error $ "Cannot assign void type to variable " ++ i ++ " declared at line " ++ show l
-    metaType RawParam = Env.RawVar
-    metaType PointerParam = Env.PointerVar
-    metaType ArrayParam = Env.ArrayVar
+    rawType = extractRawVarType t i l
+    metaType = extractParamMetaType m
 
 silentlyExtractParamType :: Param -> Env.Type
-silentlyExtractParamType (Param t m i l) = Env.Variable (rawType t, metaType m) where
-    rawType (IntType _) = Env.IntVar
-    rawType (StringType _) = Env.StringVar
-    rawType (VoidType _) =
-        error $ "Cannot assign void type to variable " ++ i ++ " declared at line " ++ show l
-    metaType RawParam = Env.RawVar
-    metaType PointerParam = Env.PointerVar
-    metaType ArrayParam = Env.ArrayVar
+silentlyExtractParamType (Param t m i l) = Env.Variable (rawType, metaType) where
+    rawType = extractRawVarType t i l
+    metaType = extractParamMetaType m
+
+extractParamMetaType :: ParamMetaType -> Env.VarMetaType
+extractParamMetaType RawParam = Env.RawVar
+extractParamMetaType PointerParam = Env.PointerVar
+extractParamMetaType ArrayParam = Env.ArrayVar
 
 
 -- END TYPE ASSIGNMENT -- END TYPE ASSGINMENT -- END TYPE ASSIGNMENT -- END TYPE ASSIGNMENT --
