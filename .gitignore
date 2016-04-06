@@ -9,3 +9,4 @@ Grammar
 Parse
 ScannerTest
 ParserTest
+AnalyzerTest
