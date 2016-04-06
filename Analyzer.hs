@@ -46,14 +46,24 @@ declarationHelper [] s = verifiedResult where
             (_, []) -> True
             _ -> error "Function main cannot take any arguments"
     verifiedResult = seq (mainHasVoidReturn && mainHasVoidArgs) []
-declarationHelper (VarDecDeclaration v _:ds) s =
-    declarationHelper ds (addVarToScope s v)
-declarationHelper (FunDecDeclaration f _:ds) s =
-    functionStatements ++ declarationHelper ds newGlobalScope where
-        newGlobalScope = addFunToScope s f
-        newFunctionScope = addParamsToScope newGlobalScope f
-        funReturnType = extractFunReturnType f
-        functionStatements = compoundStmtHelper newFunctionScope funReturnType (extractFunBody f)
+declarationHelper (VarDecDeclaration v l:ds) s = verifiedResult where
+    varName = extractVarName v
+    duplicateDeclaration = Env.contains s varName
+    verifiedResult =
+        if not duplicateDeclaration
+            then declarationHelper ds (addVarToScope s v)
+            else error $ "Line " ++ show l ++ ": duplicate global declaration of " ++ varName
+declarationHelper (FunDecDeclaration f l:ds) s = verifiedResult where
+    verifiedResult =
+        if not duplicateDeclaration
+            then functionStatements ++ declarationHelper ds newGlobalScope
+            else error $ "Line " ++ show l ++ ": duplicate global declaration of " ++ funName
+    newGlobalScope = addFunToScope s f
+    newFunctionScope = addParamsToScope newGlobalScope f
+    funReturnType = extractFunReturnType f
+    functionStatements = compoundStmtHelper newFunctionScope funReturnType (extractFunBody f)
+    funName = extractFunName f
+    duplicateDeclaration = Env.contains s funName
 
 -- Takes in a Statement, and returns whether or not it has an internal Statement
 -- that does not require a new Scope
