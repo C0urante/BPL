@@ -53,7 +53,7 @@ addToScope (GlobalScope e)   i t = GlobalScope (Map.insert i t e)
 addToScope (NestedScope e s) i t = NestedScope (Map.insert i t e) s
 
 lookup :: Scope -> Identifier -> Type
-lookup (GlobalScope e) i = case Map.lookup i e of
+lookup (GlobalScope e) i   = case Map.lookup i e of
     (Just t) -> t
     Nothing -> error $ "Reference to undefined identifier " ++ i
 lookup (NestedScope e s) i = case Map.lookup i e of
