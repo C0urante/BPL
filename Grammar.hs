@@ -96,7 +96,7 @@ data VarDec =
     deriving (Eq, Show)
 -- 5. TYPE_SPECIFIER -> int | void | string
 data TypeSpecifier =
-    IntType LineNumber | VoidType LineNumber | StringType LineNumber
+    IntType LineNumber | StringType LineNumber | VoidType LineNumber
     deriving (Eq, Show)
 -- 6. FUN_DEC -> TYPE_SPECIFIER <id> ( PARAMS ) COMPOUND_STMT
 data FunDec =
