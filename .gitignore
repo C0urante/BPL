@@ -1,8 +1,6 @@
 *.bpl
 *.o
 *.hi
-linecount
-submit
 Token
 Scanner
 Grammar
