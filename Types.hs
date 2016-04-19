@@ -136,6 +136,8 @@ data AssignmentMetaType =
     ArrayAssignment Expression
     deriving (Eq, Show)
 
+--------------------------------------------------------------------------------
+
 data Program =
     Program [Declaration]
     deriving (Eq, Show)
