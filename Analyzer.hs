@@ -1,14 +1,8 @@
 module Analyzer where
 
-import Grammar
-import qualified Environment as Env
+import qualified Grammar
+import Types
 import Debug.Trace (trace)
-import Data.Maybe
-
-analyze :: Program -> Bool
-analyze = typeCheck . assignTypes
-
-type ScopedStatementList = ([Statement], Env.Scope, Env.FunType)
 
 debugging :: Bool
 debugging = True
@@ -18,356 +12,472 @@ debug info result
     | debugging = trace info result
     | otherwise = result
 
+logAssignment :: NodeType -> String -> LineNumber -> NodeType
+logAssignment n c l = debug message n where
+    message = "Line " ++ show l ++ ": " ++ c ++ " node assigned type " ++ showNode n
 
--- Takes in a Program, and returns a series of lists of Statements paired with
--- their accompanying scopes. Throws an error if global declarations conflict,
--- and ignores all empty statement lists.
-assignTypes :: Program -> [ScopedStatementList]
-assignTypes (Program (DeclarationList ds _) _) =
-    declarationHelper ds (Env.GlobalScope Env.emptyEnvironment)
+splitScan :: (a -> b -> (a, c)) -> a -> [b] -> (a, [c])
+splitScan f base l = (single, reverse list) where
+    (single, list) = helper base l []
+    helper b [] acc = (b, acc)
+    helper b (x:xs) acc = helper next xs (result:acc) where
+        (next, result) = f b x
 
-declarationHelper :: [Declaration] -> Env.Scope -> [ScopedStatementList]
-declarationHelper [] s = verifiedResult where
-    hasMain = Env.contains s "main"
-    mainType =
-        if hasMain
-            then Env.lookup s "main"
-            else error "Program must contain main function"
-    mainFun =
-        case mainType of
-            (Env.Function f) -> f
-            (Env.Variable _) -> error "Identifier main must correspond to function at global scope"
-    mainHasVoidReturn  =
-        case mainFun of
-            (Env.VoidFun, _) -> True
-            _ -> error "Function main must have return type void"
-    mainHasVoidArgs =
-        case mainFun of
-            (_, []) -> True
-            _ -> error "Function main cannot take any arguments"
-    verifiedResult = seq (mainHasVoidReturn && mainHasVoidArgs) []
-declarationHelper (VarDecDeclaration v l:ds) s = verifiedResult where
-    varName = extractVarName v
-    duplicateDeclaration = Env.contains s varName
-    verifiedResult =
-        if not duplicateDeclaration
-            then declarationHelper ds (addVarToScope s v)
-            else error $ "Line " ++ show l ++ ": duplicate global declaration of " ++ varName
-declarationHelper (FunDecDeclaration f l:ds) s = verifiedResult where
-    verifiedResult =
-        if not duplicateDeclaration
-            then functionStatements ++ declarationHelper ds newGlobalScope
-            else error $ "Line " ++ show l ++ ": duplicate global declaration of " ++ funName
-    newGlobalScope = addFunToScope s f
-    newFunctionScope = addParamsToScope newGlobalScope f
-    funReturnType = extractFunReturnType f
-    functionStatements = compoundStmtHelper newFunctionScope funReturnType (extractFunBody f)
-    funName = extractFunName f
-    duplicateDeclaration = Env.contains s funName
+processProgram :: Grammar.Program -> TypedProgram
+processProgram (Grammar.Program (Grammar.DeclarationList ds _) _) = verifiedResult where
+    (s, ts) = splitScan programHelper emptyScope ds
+    mainDec = if Types.contains s "main"
+        then Types.lookup s "main" 1
+        else error "Programs must contain a main function"
+    mainFun = case mainDec of
+        VarDecType _ -> error "Declaration for main must correspond to a function"
+        FunDecType f -> f
+    verifiedResult = if funReturn mainFun == VoidFun
+        then
+            if null $ funArgs mainFun
+                then TypedProgram ts
+                else error "Main function cannot take any arguments"
+        else
+            error "Main function must have type void"
 
--- Takes in a Statement, and returns whether or not it has an internal Statement
--- that does not require a new Scope
-hasScopelessStatement :: Statement -> Bool
-hasScopelessStatement (CompoundStmtStmt _ _) = False
-hasScopelessStatement _ = True
+programHelper :: Scope -> Grammar.Declaration -> (Scope, TypedDeclaration)
+programHelper s d = case d of
+    (Grammar.VarDecDeclaration v _) -> (newScope, newDec) where
+        newScope = addToScope s (extractVarName v) (VarDecType varType)
+        newDec = processDeclaration newScope d
+        varType = silentlyExtractVarType v
+    (Grammar.FunDecDeclaration f _) -> (newScope, newDec) where
+        newScope = addFunToScope s f
+        newDec = processDeclaration newScope d
 
--- Takes in a Statement, and if that Statement contains a CompoundStmt, returns it
-extractCompoundStmt :: Statement -> Maybe CompoundStmt
-extractCompoundStmt s = case s of
-    (ExpressionStmt _ _) -> Nothing
-    (EmptyExpressionStmt _) -> Nothing
-    (CompoundStmtStmt result _) -> Just result
-    (IfStmt _ s' _) -> extractCompoundStmt s'
-    (IfElseStmt _ s' _ _) -> extractCompoundStmt s'
-    (WhileStmt _ s' _) -> extractCompoundStmt s'
-    (ReturnStmt _ _) -> Nothing
-    (EmptyReturnStmt _) -> Nothing
-    (WriteStmt _ _) -> Nothing
-    (WritelnStmt _) -> Nothing
+processDeclaration :: Scope -> Grammar.Declaration -> TypedDeclaration
+processDeclaration _ (Grammar.VarDecDeclaration v _) = result where
+    result = TypedVarDec (extractVarName v) (extractVarType v)
+processDeclaration s (Grammar.FunDecDeclaration (Grammar.FunDec t i p c l) _) = result where
+    result = TypedFunDec i returnType params body
+    params = processParams p
+    newScope = addParamsToScope s (Grammar.FunDec t i p c l)
+    returnType = extractFunReturnType t
+    body = processCompoundStmt newScope (funNodeType (returnType, [])) c
 
-compoundStmtHelper :: Env.Scope -> Env.FunType -> CompoundStmt -> [ScopedStatementList]
-compoundStmtHelper _ _ (CompoundStmt _ (EmptyStatementList l) _) =
-    debug ("Disregarding empty statement list at line " ++ show l) []
-compoundStmtHelper s r (CompoundStmt (LocalDecs vs _) (StatementList ss _) _) =
-    localScopedStatementList:nestedStatementsList where
-        emptyLocalScope = Env.NestedScope Env.emptyEnvironment s
-        populatedLocalScope = foldl addVarToScope emptyLocalScope vs
-        localStatements = filter hasScopelessStatement ss
-        localScopedStatementList = (localStatements, populatedLocalScope, r)
-        nestedStatements = map fromJust $ filter isJust $ map extractCompoundStmt ss
-        nestedStatementsList = concatMap (compoundStmtHelper populatedLocalScope r) nestedStatements
-compoundStmtHelper s r (CompoundStmt (EmptyLocalDecs _) (StatementList ss _) _) =
-    localScopedStatementList:nestedStatementsList where
-        localScope = s
-        localStatements = filter hasScopelessStatement ss
-        localScopedStatementList = (localStatements, localScope, r)
-        nestedStatements = map fromJust $ filter isJust $ map extractCompoundStmt ss
-        nestedStatementsList = concatMap (compoundStmtHelper localScope r) nestedStatements
+processParams :: Grammar.Params -> [(Identifier, VarType)]
+processParams (Grammar.EmptyParams _) = []
+processParams (Grammar.Params (Grammar.ParamList ps _) _) = zip is vs where
+    is = map extractParamName ps
+    vs = map silentlyExtractParamType ps
 
-addVarToScope :: Env.Scope -> VarDec -> Env.Scope
-addVarToScope s v = Env.addToScope s i t where
+processCompoundStmt :: Scope -> NodeType -> Grammar.CompoundStmt -> TypedCompoundStmt
+processCompoundStmt _ _ (Grammar.CompoundStmt _ (Grammar.EmptyStatementList _) _) =
+    TypedCompoundStmt (TypedLocalDecs []) []
+processCompoundStmt s n (Grammar.CompoundStmt l (Grammar.StatementList ss _) _) =
+    TypedCompoundStmt localDecs statements where
+        localDecs = processLocalDecs l
+        decList = case localDecs of
+            (TypedLocalDecs ds) -> ds
+        statements = map (processStatement newScope n) ss
+        newScope = foldl addVarToScope s decList
+        addVarToScope s' (i, v) = addToScope s' i (VarDecType v)
+
+processLocalDecs :: Grammar.LocalDecs -> TypedLocalDecs
+processLocalDecs (Grammar.EmptyLocalDecs _) = TypedLocalDecs []
+processLocalDecs (Grammar.LocalDecs vs _) = TypedLocalDecs (map processLocalVarDec vs)
+
+processLocalVarDec :: Grammar.VarDec -> (Identifier, VarType)
+processLocalVarDec v = (i, t) where
     i = extractVarName v
     t = extractVarType v
 
-extractVarName :: VarDec -> Identifier
-extractVarName (VarDec _ _ result _) = result
+processStatement :: Scope -> NodeType -> Grammar.Statement -> TypedStatement
+processStatement s _ (Grammar.ExpressionStmt e _) =
+    TypedExpressionStmt (processExpression s e)
+processStatement _ _ (Grammar.EmptyExpressionStmt _) =
+    TypedEmptyExpressionStmt
+processStatement s n (Grammar.CompoundStmtStmt c _) =
+    TypedCompoundStmtStmt (processCompoundStmt s n c)
+processStatement s n (Grammar.IfStmt e s' line) =
+    verifiedResult where
+        e' = processExpression s e
+        s'' = processStatement s n s'
+        verifiedResult = case nodeType e' of
+            (IntNode, RawNode) -> TypedIfStmt e' s''
+            _ -> error $
+                "Line " ++ show line ++ ": clause of if-statement must be of type raw integer"
+processStatement s n (Grammar.IfElseStmt e s' s'' line) =
+    verifiedResult where
+        e' = processExpression s e
+        s''' = processStatement s n s'
+        s'''' = processStatement s n s''
+        verifiedResult = case nodeType e' of
+            (IntNode, RawNode) -> TypedIfElseStmt e' s''' s''''
+            _ -> error $
+                "Line " ++ show line ++ ": clause of if-else-statement must be of type raw integer"
+processStatement s n (Grammar.WhileStmt e s' line) =
+    verifiedResult where
+        e' = processExpression s e
+        s'' = processStatement s n s'
+        verifiedResult = case nodeType e' of
+            (IntNode, RawNode) -> TypedWhileStmt e' s''
+            _ -> error $
+                "Line " ++ show line ++ ": clause of while-statement must be of type raw integer"
+processStatement s n (Grammar.ReturnStmt e line) =
+    verifiedResult where
+        e' = processExpression s e
+        verifiedResult = if nodeType e' == n
+            then
+                if nodeRaw n /= VoidNode
+                    then TypedReturnStmt e'
+                    else error $
+                        "Line " ++ show line ++ ": void function cannot have non-empty return statement"
+                else error $
+                    "Line " ++ show line ++ ": return type does not match function type"
+processStatement _ n (Grammar.EmptyReturnStmt line) =
+    verifiedResult where
+        verifiedResult = if nodeRaw n == VoidNode
+            then TypedEmptyReturnStmt
+            else error $
+                "Line " ++ show line ++ ": non-void function cannot have empty return statement"
+processStatement s _ (Grammar.WriteStmt e line) =
+    verifiedResult where
+        e' = processExpression s e
+        verifiedResult = case nodeType e' of
+            (IntNode, RawNode) -> TypedWriteStmt e'
+            (StringNode, RawNode) -> TypedWriteStmt e'
+            _ -> error $
+                "Line " ++ show line ++ ": arguments to write statement can only be of type raw integer or raw string"
+processStatement _ _ (Grammar.WritelnStmt _) =
+    TypedWritelnStmt
 
-extractVarLine :: VarDec -> LineNumber
-extractVarLine (VarDec _ _ _ result) = result
+processExpression :: Scope -> Grammar.Expression -> TypedExpression
+processExpression s (Grammar.AssignmentExpression (Grammar.Var i m l) e line) =
+    TypedAssignmentExpression i a e' loggedNode where
+        dec = Types.lookup s i l
+        var = case dec of
+            VarDecType v -> v
+            FunDecType _ -> error $
+                "Line " ++ show line ++ ": cannot assign to function "  ++ i
+        alteredVar = case m of
+            Grammar.RawVar -> var
+            Grammar.PointerVar -> case varMeta var of
+                PointerVar -> (varRaw var, RawVar)
+                RawVar -> error $
+                    "Line " ++ show line ++ ": cannot assign to address of raw variable " ++ i
+                ArrayVar -> error $
+                    "Line " ++ show line ++ ": cannot assign to address of array variable " ++ i
+            Grammar.ArrayVar _ -> case varMeta var of
+                ArrayVar -> (varRaw var, RawVar)
+                RawVar -> error $
+                    "Line " ++ show line ++ ": cannot assign to index of raw variable " ++ i
+                PointerVar -> error $
+                    "Line " ++ show line ++ ": cannot assign to index of pointer variable " ++ i
+        e' = processExpression s e
+        a = case m of
+            Grammar.RawVar -> RawAssignment
+            Grammar.PointerVar -> DereferenceAssignment
+            Grammar.ArrayVar e'' -> let index = processExpression s e'' in
+                if nodeType index == (IntNode, RawNode)
+                    then ArrayAssignment index
+                    else error $
+                        "Line " ++ show line ++ ": array indices must be of type raw integer"
+        node = nodeType e'
+        verifiedNode = if node == varNodeType alteredVar
+            then node
+            else error $
+                "Line " ++ show line ++ ": types of left- and right-hand sides do not match"
+        loggedNode = logAssignment verifiedNode "Expression" line
+processExpression s (Grammar.SimpleExpression c line) =
+    TypedSimpleExpression compExp loggedNode where
+        compExp = processCompExp s c
+        node = nodeType compExp
+        loggedNode = logAssignment node "Expression" line
 
-extractVarType :: VarDec -> Env.Type
-extractVarType (VarDec t m i l) = result where
+processCompExp :: Scope -> Grammar.CompExp -> TypedCompExp
+processCompExp s (Grammar.CompExp e r e' line) =
+    TypedCompExp e'' r' e''' loggedNode where
+        e'' = processE s e
+        r' = toTypedRelOp r
+        e''' = processE s e'
+        rawInt = (IntNode, RawNode)
+        verifiedNode = if nodeType e'' == rawInt && nodeType e''' == rawInt
+            then rawInt
+            else error $
+                "Line " ++ show line ++ ": both operands of CompExp must be of type raw integer"
+        loggedNode = logAssignment verifiedNode "CompExp" line
+processCompExp s (Grammar.SimpleExp e line) =
+    TypedSimpleExp e' loggedNode where
+        e' = processE s e
+        node = nodeType e'
+        loggedNode = logAssignment node "CompExp" line
+
+processE :: Scope -> Grammar.E -> TypedE
+processE s (Grammar.AddE e a t line) =
+    TypedAddE e' a' t' loggedNode where
+        e' = processE s e
+        a' = toTypedAddOp a
+        t' = processT s t
+        rawInt = (IntNode, RawNode)
+        verifiedNode = if nodeType e' == rawInt && nodeType t' == rawInt
+            then rawInt
+            else error $
+                "Line " ++ show line ++ ": both operands of AddE must be of type raw integer"
+        loggedNode = logAssignment verifiedNode "E" line
+processE s (Grammar.SimpleE t line) =
+    TypedSimpleE t' loggedNode where
+        t' = processT s t
+        node = nodeType t'
+        loggedNode = logAssignment node "E" line
+
+processT :: Scope -> Grammar.T -> TypedT
+processT s (Grammar.MulT t m f line) =
+    TypedMulT t' m' f' loggedNode where
+        t' = processT s t
+        m' = toTypedMulOp m
+        f' = processF s f
+        rawInt = (IntNode, RawNode)
+        verifiedNode = if nodeType t' == rawInt && nodeType f' == rawInt
+            then rawInt
+            else error $
+                "Line " ++ show line ++ ": both operands of MulT must be of type raw integer"
+        loggedNode = logAssignment verifiedNode "T" line
+processT s (Grammar.SimpleT f line) =
+    TypedSimpleT f' loggedNode where
+        f' = processF s f
+        node = nodeType f'
+        loggedNode = logAssignment node "T" line
+
+processF :: Scope -> Grammar.F -> TypedF
+processF s (Grammar.NegativeF f line) =
+    result where
+        f' = processF s f
+        node = nodeType f'
+        verifiedNode = case node of
+            (IntNode, RawNode) -> node
+            _ -> error $
+                "Line " ++ show line ++ ": negative F must have child of type raw integer"
+        loggedNode = logAssignment verifiedNode "F" line
+        result = TypedNegativeF f' loggedNode
+processF s (Grammar.ReferenceF factor line) =
+    result where
+        factor' = processFactor s factor
+        node = nodeType factor'
+        verifiedNode = case node of
+            (r, RawNode) -> (r, PointerNode)
+            (_, PointerNode) -> error $
+                "Line " ++ show line ++ ": cannot reference pointer factor"
+            (_, ArrayNode) -> error $
+                "Line " ++ show line ++ ": cannot reference array factor"
+        loggedNode = logAssignment verifiedNode "F" line
+        result = TypedReferenceF factor' loggedNode
+processF s (Grammar.DereferenceF factor line) =
+    result where
+        factor' = processFactor s factor
+        node = nodeType factor'
+        verifiedNode = case node of
+            (r, PointerNode) -> (r, RawNode)
+            (_, RawNode) -> error $
+                "Line " ++ show line ++ ": cannot dereference raw factor"
+            (_, ArrayNode) -> error $
+                "Line " ++ show line ++ ": cannot dereference array factor"
+        loggedNode = logAssignment verifiedNode "F" line
+        result = TypedDereferenceF factor' loggedNode
+processF s (Grammar.SimpleF factor line) =
+    TypedSimpleF factor' loggedNode where
+        factor' = processFactor s factor
+        loggedNode = logAssignment (nodeType factor') "F" line
+
+processFactor :: Scope -> Grammar.Factor -> TypedFactor
+processFactor s (Grammar.GroupedFactor e line) =
+    TypedGroupedFactor expression loggedNode where
+        expression = processExpression s e
+        loggedNode = logAssignment (nodeType expression) "Factor" line
+processFactor s (Grammar.FunCallFactor f line) =
+    TypedFunCallFactor funCall loggedNode where
+        funCall = processFunCall s f
+        loggedNode = logAssignment (nodeType funCall) "Factor" line
+processFactor _ (Grammar.ReadFactor line) = result where
+    loggedNode = logAssignment (IntNode, RawNode) "Factor" line
+    result = TypedReadFactor loggedNode
+processFactor s (Grammar.DereferenceFactor i line) =
+    TypedVarFactor i loggedNode where
+        dec = Types.lookup s i line
+        var = case dec of
+            VarDecType v -> v
+            FunDecType _ -> error $
+                "Line " ++ show line ++ ": cannot dereference function " ++ i
+        ptr = case var of
+            (r, PointerVar) -> r
+            (_, RawVar) -> error $
+                "Line " ++ show line ++ ": cannot dereference raw variable " ++ i
+            (_, ArrayVar) -> error $
+                "Line " ++ show line ++ ": cannot dereference array variable " ++ i
+        loggedNode = logAssignment (varNodeType (ptr, PointerVar)) "Factor" line
+processFactor s (Grammar.VarFactor i line) =
+    TypedVarFactor i loggedNode where
+        dec = Types.lookup s i line
+        var = case dec of
+            VarDecType v -> v
+            FunDecType _ -> error $
+                "Line " ++ show line ++ ": cannot reference function " ++ i ++ " without calling it"
+        loggedNode = logAssignment (varNodeType var) "Factor" line
+processFactor s (Grammar.ArrayReferenceFactor i e line) =
+    TypedArrayReferenceFactor i verifiedIndex loggedNode where
+        index = processExpression s e
+        verifiedIndex = if nodeType index == (IntNode, RawNode)
+            then index
+            else error $
+                "Line " ++ show line ++ ": array indices must be of type raw integer"
+        dec = Types.lookup s i line
+        var = case dec of
+            VarDecType v -> v
+            FunDecType _ -> error $
+                "Line " ++ show line ++ ": cannot index function " ++ i
+        arr = case var of
+            (a, ArrayVar) -> a
+            (_, RawVar) -> error $
+                "Line " ++ show line ++ ": cannot index raw variable " ++ i
+            (_, PointerVar) -> error $
+                "Line " ++ show line ++ ": cannot index pointer variable " ++ i
+        loggedNode = logAssignment (varNodeType (arr, RawVar)) "Factor" line
+processFactor _ (Grammar.NumberFactor n line) = result where
+    loggedNode = logAssignment (IntNode, RawNode) "Factor" line
+    result = TypedNumberFactor n loggedNode
+processFactor _ (Grammar.StringFactor s' line) = result where
+    loggedNode = logAssignment (StringNode, RawNode) "Factor" line
+    result = TypedStringFactor s' loggedNode
+
+processFunCall :: Scope -> Grammar.FunCall -> TypedFunCall
+processFunCall s (Grammar.FunCall i (Grammar.EmptyArgs _) line) =
+    TypedFunCall i [] loggedReturnType where
+        dec = Types.lookup s i line
+        fun = case dec of
+            VarDecType _ -> error $ "Line " ++ show line ++ ": cannot call variable " ++ i
+            FunDecType f -> f
+        verifiedReturnType =
+            if null $ funArgs fun
+                then funNodeType fun
+                else error $
+                    "Line " ++ show line ++ ": function " ++ i ++ " given invalid arguments"
+        loggedReturnType = logAssignment verifiedReturnType "FunCall" line
+processFunCall s (Grammar.FunCall i (Grammar.Args (Grammar.ArgList es _) _) line) =
+    TypedFunCall i args loggedReturnType where
+        args = map (processExpression s) es
+        argTypes = map nodeType args
+        dec = Types.lookup s i line
+        fun = case dec of
+            VarDecType _ -> error $ "Line " ++ show line ++ ": cannot call variable " ++ i
+            FunDecType f -> f
+        paramTypes = map varNodeType (funArgs fun)
+        verifiedReturnType =
+            if argTypes == paramTypes
+                then funNodeType fun
+                else error $
+                    "Line " ++ show line ++ ": function " ++ i ++ " given invalid arguments"
+        loggedReturnType = logAssignment verifiedReturnType "FunCall" line
+
+--------------------------------------------------------------------------------
+
+extractVarName :: Grammar.VarDec -> Identifier
+extractVarName (Grammar.VarDec _ _ result _) = result
+
+extractVarLine :: Grammar.VarDec -> Grammar.LineNumber
+extractVarLine (Grammar.VarDec _ _ _ result) = result
+
+extractVarType :: Grammar.VarDec -> VarType
+extractVarType (Grammar.VarDec t m i l) = result where
     var = (rawType, metaType)
-    debugMessage = "Line " ++ show l ++ ": variable " ++ i ++ " assigned type " ++ Env.showVar var
-    result = debug debugMessage $ Env.Variable var
+    debugMessage = "Line " ++ show l ++ ": variable " ++ i ++ " assigned type " ++ showVar var
+    result = debug debugMessage var
     rawType = extractRawVarType t i l
     metaType = extractMetaVarType m
 
-extractRawVarType :: TypeSpecifier -> Identifier -> LineNumber -> Env.VarType
-extractRawVarType (IntType _) _ _ = Env.IntVar
-extractRawVarType (StringType _) _ _ = Env.StringVar
-extractRawVarType (VoidType _) i l =
+silentlyExtractVarType :: Grammar.VarDec -> VarType
+silentlyExtractVarType (Grammar.VarDec t m i l) = result where
+    result = (rawType, metaType)
+    rawType = extractRawVarType t i l
+    metaType = extractMetaVarType m
+
+extractRawVarType :: Grammar.TypeSpecifier -> Identifier -> Grammar.LineNumber -> VarRawType
+extractRawVarType (Grammar.IntType _) _ _ = IntVar
+extractRawVarType (Grammar.StringType _) _ _ = StringVar
+extractRawVarType (Grammar.VoidType _) i l =
     error $ "Cannot assign void type to variable " ++ i ++ " declared at line " ++ show l
 
-extractMetaVarType :: VarDecMetaType -> Env.VarMetaType
-extractMetaVarType RawVarDec = Env.RawVar
-extractMetaVarType PointerVarDec = Env.PointerVar
-extractMetaVarType (ArrayVarDec _) = Env.ArrayVar
+extractMetaVarType :: Grammar.VarDecMetaType -> VarMetaType
+extractMetaVarType Grammar.RawVarDec = RawVar
+extractMetaVarType Grammar.PointerVarDec = PointerVar
+extractMetaVarType (Grammar.ArrayVarDec _) = ArrayVar
 
-addFunToScope :: Env.Scope -> FunDec -> Env.Scope
-addFunToScope s f = Env.addToScope s i t where
+addFunToScope :: Scope -> Grammar.FunDec -> Scope
+addFunToScope s f = addToScope s i t where
     i = extractFunName f
-    t = extractFunType f
+    t = FunDecType $ extractFunType f
 
-extractFunName :: FunDec -> Identifier
-extractFunName (FunDec _ result _ _ _) = result
+extractFunName :: Grammar.FunDec -> Identifier
+extractFunName (Grammar.FunDec _ result _ _ _) = result
 
-extractFunBody :: FunDec -> CompoundStmt
-extractFunBody (FunDec _ _ _ result _) = result
+extractFunBody :: Grammar.FunDec -> Grammar.CompoundStmt
+extractFunBody (Grammar.FunDec _ _ _ result _) = result
 
-extractFunType :: FunDec -> Env.Type
-extractFunType (FunDec t i p _ l) = Env.Function (returnType t, paramTypes p) where
-    returnType (IntType _) =
-        debug ("Line " ++ show l ++ ": function " ++ i ++ " assigned return type integer") Env.IntFun
-    returnType (StringType _) =
-        debug ("Line " ++ show l ++ ": function " ++ i ++ " assigned return type string") Env.StringFun
-    returnType (VoidType _) =
-        debug ("Line " ++ show l ++ ": function " ++ i ++ " assigned return type void") Env.VoidFun
-    paramTypes (EmptyParams _) = []
-    paramTypes (Params (ParamList p' _) _) = map (extractVar . extractParamType) p'
-    extractVar (Env.Variable v) = v
+extractFunType :: Grammar.FunDec -> FunType
+extractFunType (Grammar.FunDec t i p _ l) = (returnType t, paramTypes p) where
+    returnType (Grammar.IntType _) =
+        debug ("Line " ++ show l ++ ": function " ++ i ++ " assigned return type integer") IntFun
+    returnType (Grammar.StringType _) =
+        debug ("Line " ++ show l ++ ": function " ++ i ++ " assigned return type string") StringFun
+    returnType (Grammar.VoidType _) =
+        debug ("Line " ++ show l ++ ": function " ++ i ++ " assigned return type void") VoidFun
+    paramTypes (Grammar.EmptyParams _) = []
+    paramTypes (Grammar.Params (Grammar.ParamList p' _) _) = map (extractVar . extractParamType) p'
+    extractVar (VarDecType v) = v
 
-extractFunReturnType :: FunDec -> Env.FunType
-extractFunReturnType (FunDec t _ _ _ _) = returnType t where
-    returnType (IntType _) = Env.IntFun
-    returnType (StringType _) = Env.StringFun
-    returnType (VoidType _) = Env.VoidFun
+extractFunReturnType :: Grammar.TypeSpecifier -> FunReturnType
+extractFunReturnType (Grammar.IntType _) = IntFun
+extractFunReturnType (Grammar.StringType _) = StringFun
+extractFunReturnType (Grammar.VoidType _) = VoidFun
 
-addParamsToScope :: Env.Scope -> FunDec -> Env.Scope
-addParamsToScope s (FunDec _ _ p _ _) = foldl addParamToScope newScope extractedParams where
-    newScope = Env.NestedScope Env.emptyEnvironment s
+addParamsToScope :: Scope -> Grammar.FunDec -> Scope
+addParamsToScope s (Grammar.FunDec _ _ p _ _) = foldl addParamToScope newScope extractedParams where
+    newScope = NestedScope emptyEnvironment s
     extractedParams = case p of
-        (Params (ParamList ps _ ) _) -> ps
-        (EmptyParams _) -> []
+        (Grammar.Params (Grammar.ParamList ps _ ) _) -> ps
+        (Grammar.EmptyParams _) -> []
 
-addParamToScope :: Env.Scope -> Param -> Env.Scope
-addParamToScope s p = Env.addToScope s (extractParamName p) (silentlyExtractParamType p)
+addParamToScope :: Scope -> Grammar.Param -> Scope
+addParamToScope s p = addToScope s (extractParamName p) (VarDecType $ silentlyExtractParamType p)
 
-extractParamName :: Param -> Identifier
-extractParamName (Param _ _ result _) = result
+extractParamName :: Grammar.Param -> Identifier
+extractParamName (Grammar.Param _ _ result _) = result
 
-extractParamType :: Param -> Env.Type
-extractParamType (Param t m i l) = result where
+extractParamType :: Grammar.Param -> DecType
+extractParamType (Grammar.Param t m i l) = result where
     var = (rawType, metaType)
-    debugMessage = "Line " ++ show l ++ ": variable " ++ i ++ " assigned type " ++ Env.showVar var
-    result = debug debugMessage $ Env.Variable var
+    debugMessage = "Line " ++ show l ++ ": variable " ++ i ++ " assigned type " ++ showVar var
+    result = debug debugMessage $ VarDecType var
     rawType = extractRawVarType t i l
     metaType = extractParamMetaType m
 
-silentlyExtractParamType :: Param -> Env.Type
-silentlyExtractParamType (Param t m i l) = Env.Variable (rawType, metaType) where
+silentlyExtractParamType :: Grammar.Param -> VarType
+silentlyExtractParamType (Grammar.Param t m i l) = (rawType, metaType) where
     rawType = extractRawVarType t i l
     metaType = extractParamMetaType m
 
-extractParamMetaType :: ParamMetaType -> Env.VarMetaType
-extractParamMetaType RawParam = Env.RawVar
-extractParamMetaType PointerParam = Env.PointerVar
-extractParamMetaType ArrayParam = Env.ArrayVar
+extractParamMetaType :: Grammar.ParamMetaType -> VarMetaType
+extractParamMetaType Grammar.RawParam = RawVar
+extractParamMetaType Grammar.PointerParam = PointerVar
+extractParamMetaType Grammar.ArrayParam = ArrayVar
 
+toTypedRelOp :: Grammar.RelOp -> TypedRelOp
+toTypedRelOp (Grammar.LessThanOrEqualRelOp _) = TypedLessThanOrEqualRelOp
+toTypedRelOp (Grammar.LessThanRelOp _) = TypedLessThanRelOp
+toTypedRelOp (Grammar.EqualRelOp _) = TypedEqualRelOp
+toTypedRelOp (Grammar.NotEqualRelOp _) = TypedNotEqualRelOp
+toTypedRelOp (Grammar.GreaterThanRelOp _) = TypedGreaterThanRelOp
+toTypedRelOp (Grammar.GreaterThanOrEqualRelOp _) = TypedGreaterThanOrEqualRelOp
 
--- END TYPE ASSIGNMENT -- END TYPE ASSGINMENT -- END TYPE ASSIGNMENT -- END TYPE ASSIGNMENT --
-----------------------------------------------------------------------------------------------
--- BEGIN TYPE CHECKING -- BEGIN TYPE CHECKING -- BEGIN TYPE CHECKING -- BEGIN TYPE CHECKING --
+toTypedAddOp :: Grammar.AddOp -> TypedAddOp
+toTypedAddOp (Grammar.PlusAddOp _) = TypedPlusAddOp
+toTypedAddOp (Grammar.MinusAddOp _) = TypedMinusAddOp
 
-logAssignment :: Env.Var -> String -> LineNumber -> Env.Var
-logAssignment v c l = debug message v where
-    message = "Line " ++ show l ++ ": " ++ c ++ " assigned type " ++ Env.showVar v
-
-typeCheck :: [ScopedStatementList] -> Bool
-typeCheck = all statementListCheck
-
-statementListCheck :: ScopedStatementList -> Bool
-statementListCheck (ss, s, r) = all (statementCheck s r) ss
-
-statementCheck :: Env.Scope -> Env.FunType -> Statement -> Bool
-statementCheck s _ (ExpressionStmt e _) =
-    seq (expressionType s e) True
-statementCheck _ _ (EmptyExpressionStmt _) =
-    True
-statementCheck s r (IfStmt e s' _) =
-    isBooleanType (expressionType s e) && statementCheck s r s'
-statementCheck s r (IfElseStmt e s' s'' _) =
-    isBooleanType (expressionType s e) && statementCheck s r s' && statementCheck s r s''
-statementCheck s r (WhileStmt e s' _) =
-    isBooleanType (expressionType s e) && statementCheck s r s'
-statementCheck s r (ReturnStmt e _) =
-    expressionType s e == Env.funTypeToVar r
-statementCheck _ r (EmptyReturnStmt _) =
-    isVoidType r
-statementCheck s _ (WriteStmt e _) =
-    isWriteType (expressionType s e)
-statementCheck _ _ (WritelnStmt _) = True
--- All CompoundStmtStmts will have been added to another ScopedStatementList; no
--- need to check them here, but we do need to account for the case to make
--- recursion with the bodies of if/while statements easier
-statementCheck _ _ (CompoundStmtStmt _ _) = True
-
-expressionType :: Env.Scope -> Expression -> Env.Var
-expressionType s (SimpleExpression c l) = logAssignment result "Expression" l where
-    result = compExpType s c
-expressionType s (AssignmentExpression v e l) = logAssignment verifiedResult "Expression" l where
-    verifiedResult =
-        if leftHandType == rightHandType
-            then leftHandType
-            else error $ "Line " ++ show l ++ ": left hand and right hand types do not match"
-    rightHandType = expressionType s e
-    leftHandType = leftHandTransformedType (leftHandScopeType v) v
-    leftHandScopeType (Var i _ _) = case Env.lookup s i of
-        (Env.Function _) -> error $ "Line " ++ show l ++ ": cannot assign to function"
-        (Env.Variable (t, m)) -> (t, m)
-    leftHandTransformedType :: Env.Var -> Var -> Env.Var
-    leftHandTransformedType (t, m) (Var _ a _) = case (t, m, a) of
-        (t', m', RawVar) -> (t', m')
-        (t', Env.PointerVar, PointerVar) -> (t', Env.RawVar)
-        (_, Env.PointerVar, ArrayVar _) ->
-            error $ "Line " ++ show l ++ ": cannot access pointer via index"
-        (t', Env.ArrayVar, ArrayVar e') ->
-            if isIntegerType $ expressionType s e'
-                then (t', Env.RawVar)
-                else error $ "Line " ++ show l ++ ": array indices must be integer type"
-        (_, Env.ArrayVar, PointerVar) ->
-            error $ "Line " ++ show l ++ ": cannot dereference array"
-
-compExpType :: Env.Scope -> CompExp -> Env.Var
-compExpType s (SimpleExp e l) = logAssignment result "CompExp" l where
-    result = eType s e
-compExpType s (CompExp e _ e' l) = logAssignment verifiedResult "CompExp" l where
-    verifiedResult =
-        if isIntegerType leftHandType && isIntegerType rightHandType
-            then (Env.IntVar, Env.RawVar)
-            else error $ "Line " ++ show l ++ ": both sides of CompExp must have type raw integer"
-    leftHandType = eType s e
-    rightHandType = eType s e'
-
-eType :: Env.Scope -> E -> Env.Var
-eType s (SimpleE t l) = logAssignment result "E" l where
-    result = tType s t
-eType s (AddE e _ t l) = logAssignment verifiedResult "E" l where
-    verifiedResult =
-        if isIntegerType leftHandType && isIntegerType rightHandType
-            then (Env.IntVar, Env.RawVar)
-            else error $ "Line " ++ show l ++ ": both sides of AddE must have type raw integer"
-    leftHandType = eType s e
-    rightHandType = tType s t
-
-tType :: Env.Scope -> T -> Env.Var
-tType s (SimpleT f l) = logAssignment result "T" l where
-    result = fType s f
-tType s (MulT t _ f l) = logAssignment verifiedResult "T" l where
-    verifiedResult =
-        if isIntegerType leftHandType && isIntegerType rightHandType
-            then (Env.IntVar, Env.RawVar)
-            else error $ "Line " ++ show l ++ ": both sides of MulT must have type raw integer"
-    leftHandType = tType s t
-    rightHandType = fType s f
-
-fType :: Env.Scope -> F -> Env.Var
-fType s (NegativeF f l) = logAssignment verifiedResult "F" l where
-    verifiedResult =
-        if isIntegerType operandType
-            then (Env.IntVar, Env.RawVar)
-            else error $ "Line " ++ show l ++ ": unary negative operator requires raw integer type"
-    operandType = fType s f
-fType s (ReferenceF factor l) = logAssignment verifiedResult "F" l where
-    verifiedResult = case operandType of
-        (t, Env.RawVar) -> (t, Env.PointerVar)
-        (_, Env.ArrayVar) -> error $ "Line " ++ show l ++ ": cannot reference array type"
-        (_, Env.PointerVar) -> error $ "Line " ++ show l ++ ": cannot reference pointer type"
-    operandType = factorType s factor
-fType s (DereferenceF factor l) = logAssignment verifiedResult "F" l where
-    verifiedResult = case operandType of
-        (t, Env.PointerVar) -> (t, Env.RawVar)
-        (_, Env.RawVar) -> error $ "Line " ++ show l ++ ": cannot dereference raw type"
-        (_, Env.ArrayVar) -> error $ "Line " ++ show l ++ ": cannot dereference array type"
-    operandType = factorType s factor
-fType s (SimpleF factor l) = logAssignment result "F" l where
-    result = factorType s factor
-
-factorType :: Env.Scope -> Factor -> Env.Var
-factorType s (GroupedFactor e l) = logAssignment result "Factor" l where
-    result = expressionType s e
-factorType s (FunCallFactor fc l) = logAssignment result "Factor" l where
-    result = funCallType s fc
-factorType _ (ReadFactor l) = logAssignment result "Factor" l where
-    result = (Env.StringVar, Env.RawVar)
-factorType s (DereferenceFactor i l) = logAssignment verifiedResult "Factor" l where
-    scopeVarType = Env.lookup s i
-    verifiedResult = case scopeVarType of
-        (Env.Variable (t, Env.PointerVar)) -> (t, Env.PointerVar)
-        (Env.Variable (_, Env.RawVar)) -> error $ "Line " ++ show l ++ ": cannot dereference raw type"
-        (Env.Variable (_, Env.ArrayVar)) -> error $ "Line " ++ show l ++ ": cannot dereference array type"
-        (Env.Function _) -> error $ "Line " ++ show l ++ ": function illegally used outside context of either declaration or call"
-factorType s (VarFactor i l) = logAssignment verifiedResult "Factor" l where
-    verifiedResult = case scopedVarType of
-        (Env.Variable v) -> v
-        (Env.Function _) -> error $ "Line " ++ show l ++ ": function illegally used outside context of either declaration or call"
-    scopedVarType = Env.lookup s i
-factorType s (ArrayReferenceFactor i e l) = logAssignment verifiedResult "Factor" l where
-    verifiedResult = case scopedVarType of
-        (Env.Variable (t, Env.ArrayVar)) ->
-            if isIntegerType $ expressionType s e
-                then (t, Env.RawVar)
-                else error $ "Line " ++ show l ++ ": array indices must be integer type"
-        (Env.Variable (_, Env.RawVar)) -> error $ "Line " ++ show l ++ ": cannot index raw type"
-        (Env.Variable (_, Env.PointerVar)) -> error $ "Line " ++ show l ++ ": cannot index pointer type"
-        (Env.Function _) -> error $ "Line " ++ show l ++ ": function illegally used outside context of either declaration or call"
-    scopedVarType = Env.lookup s i
-factorType _ (NumberFactor _ l) = logAssignment result "Factor" l where
-    result = (Env.IntVar, Env.RawVar)
-factorType _ (StringFactor _ l) = logAssignment result "Factor" l where
-    result = (Env.StringVar, Env.RawVar)
-
-funCallType :: Env.Scope -> FunCall -> Env.Var
-funCallType s (FunCall i a l) = logAssignment verifiedResult "FunCall" l where
-    verifiedResult =
-        if scopedFunArgs == extractArgTypes a
-            then Env.funTypeToVar scopedFunType
-            else error $ "Line " ++ show l ++ ": incorrect argument types supplied to function"
-    (scopedFunType, scopedFunArgs) = extractFun $ Env.lookup s i
-    extractFun (Env.Variable _) = error $ "Line " ++ show l ++ ": cannot call non-function"
-    extractFun (Env.Function f) = f
-    extractArgTypes (EmptyArgs _) = []
-    extractArgTypes (Args (ArgList as _) _) = map (expressionType s) as
-
-isIntegerType :: Env.Var -> Bool
-isIntegerType = (==) (Env.IntVar, Env.RawVar)
-
-isBooleanType :: Env.Var -> Bool
-isBooleanType = isIntegerType
-
-isVoidType :: Env.FunType -> Bool
-isVoidType Env.VoidFun = True
-isVoidType _ = False
-
-isWriteType :: Env.Var -> Bool
-isWriteType (t, m) = m == Env.RawVar && (t == Env.IntVar || t == Env.StringVar)
+toTypedMulOp :: Grammar.MulOp -> TypedMulOp
+toTypedMulOp (Grammar.TimesMulOp _) = TypedTimesMulOp
+toTypedMulOp (Grammar.DivMulOp _) = TypedDivMulOp
+toTypedMulOp (Grammar.ModMulOp _) = TypedModMulOp
