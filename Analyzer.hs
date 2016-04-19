@@ -1,3 +1,19 @@
+-- Chris Egerton
+-- March - April, 2016
+
+--      This is the Analyzer module.
+--      It serves several purposes. Firstly, to verify that the program is
+-- type-safe. Also, to return a new Program tree (from Types.hs, not
+-- Grammar.hs), which contains some consolidated nodes and type information for
+-- everything from an Expression downward. Next, it checks for duplicate
+-- global declarations (ones that share an identifier) and throws an error if
+-- any are found. Finally, it makes sure that the program has a declaration for
+-- a function named "main" of type void which takes no arguments.
+--      If the debugging variable is set to True, information about these type
+-- assignments will be logged as it is discovered, as well as information
+-- regarding the assignment of types to scoped and global variables and
+-- functions.
+
 module Analyzer where
 
 import qualified Grammar
