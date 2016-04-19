@@ -1,6 +1,7 @@
 *.bpl
 *.o
 *.hi
+assembly
 Token
 Scanner
 Grammar
