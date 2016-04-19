@@ -64,10 +64,10 @@ parseDeclaration cb tokens' = parseTypeSpecifier helper tokens' where
         -- TYPE_SPECIFIER <id> [ <num> ] ;
         (Token T_IDENTIFIER i _:
          Token T_OPEN_BRACKET _ _:
-         Token T_NUMBER n _:
+         Token T_NUMBER n l:
          Token T_CLOSE_BRACKET _ _:
          Token T_SEMICOLON _ _:ts) ->
-            cb (VarDecDeclaration (VarDec t' (ArrayVarDec $ parseInt n) i line) line) ts
+            cb (VarDecDeclaration (VarDec t' (ArrayVarDec $ parseInt n l) i line) line) ts
         -- TYPE_SPECIFIER <id> ( PARAMS ) COMPOUND_STMT
         (Token T_IDENTIFIER identifier _:
          Token T_OPEN_PARENTHESIS _ _:ts) -> parseParams (paramsHelper identifier) ts where
@@ -102,10 +102,10 @@ parseVarDec cb tokens = parseTypeSpecifier helper tokens where
         cb (VarDec t PointerVarDec i line) ts
     helper t (Token T_IDENTIFIER i _:
               Token T_OPEN_BRACKET _ _:
-              Token T_NUMBER n _:
+              Token T_NUMBER n l:
               Token T_CLOSE_BRACKET _ _:
               Token T_SEMICOLON _ _:ts) =
-        cb (VarDec t (ArrayVarDec $ parseInt n) i line) ts
+        cb (VarDec t (ArrayVarDec $ parseInt n l) i line) ts
     helper _ (Token _ v l:_) =
         error $ "Line " ++ show l ++ ": " ++
                 "expected variable declaration; " ++
@@ -469,7 +469,7 @@ parseFactor cb tokens = case tokens of
     -- ( => ( Expression )
     (Token T_OPEN_PARENTHESIS _ line:ts) -> parseExpression (groupedHelper line) ts
     -- <num>
-    (Token T_NUMBER n l:ts) -> cb (NumberFactor (parseInt n) l) ts
+    (Token T_NUMBER n l:ts) -> cb (NumberFactor (parseInt n l) l) ts
     -- <string>
     (Token T_STRING_LITERAL s l:ts) -> cb (StringFactor s l) ts
     -- Something's not right...
@@ -528,8 +528,15 @@ parseArgList cb tokens line = parseExpression (helper []) tokens where
     helper acc e (Token T_COMMA _ _:ts) = parseExpression (helper (e:acc)) ts
     helper acc e ts = cb (ArgList (reverse (e:acc)) line) ts
 
-parseInt :: String -> Int
-parseInt = read
+parseInt :: String -> LineNumber -> Int
+parseInt s l = result where
+    n = read s :: Int
+    result
+        | n > 2^(31 :: Int) - 1 =
+            error $ "Line " ++ show l ++ ": " ++ s ++ ": numeric literal too large"
+        | n < -2^(31 :: Int) =
+            error $ "Line " ++ show l ++ ": " ++ s ++ ": numeric literal too small"
+        | otherwise = n
 
 isTypeSpecifier :: Token -> Bool
 isTypeSpecifier = (`elem` [T_INT, T_STRING, T_VOID]) . tokenType
