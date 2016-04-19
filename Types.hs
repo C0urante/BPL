@@ -1,6 +1,7 @@
 module Types where
 
 import qualified Data.Map as Map
+import Grammar (RelOp, AddOp, MulOp)
 
 type LineNumber = Int
 
@@ -132,132 +133,112 @@ funNodeType (r, _) = (raw, RawNode) where
 data AssignmentMetaType =
     RawAssignment |
     DereferenceAssignment |
-    ArrayAssignment TypedExpression
+    ArrayAssignment Expression
     deriving (Eq, Show)
 
-data TypedProgram =
-    TypedProgram [TypedDeclaration]
+data Program =
+    Program [Declaration]
     deriving (Eq, Show)
 
-data TypedDeclaration =
-    TypedVarDec Identifier VarType |
-    TypedFunDec Identifier FunReturnType [(Identifier, VarType)] TypedCompoundStmt
+data Declaration =
+    VarDec Identifier VarType |
+    FunDec Identifier FunReturnType [(Identifier, VarType)] CompoundStmt
     deriving (Eq, Show)
 
-data TypedCompoundStmt =
-    TypedCompoundStmt TypedLocalDecs [TypedStatement]
+data CompoundStmt =
+    CompoundStmt LocalDecs [Statement]
     deriving (Eq, Show)
 
-data TypedLocalDecs =
-    TypedLocalDecs [(Identifier, VarType)]
+data LocalDecs =
+    LocalDecs [(Identifier, VarType)]
     deriving (Eq, Show)
 
-data TypedStatement =
-    TypedExpressionStmt TypedExpression |
-    TypedEmptyExpressionStmt |
-    TypedCompoundStmtStmt TypedCompoundStmt |
-    TypedIfStmt TypedExpression TypedStatement |
-    TypedIfElseStmt TypedExpression TypedStatement TypedStatement |
-    TypedWhileStmt TypedExpression TypedStatement |
-    TypedReturnStmt TypedExpression |
-    TypedEmptyReturnStmt |
-    TypedWriteStmt TypedExpression |
-    TypedWritelnStmt
+data Statement =
+    ExpressionStmt Expression |
+    EmptyExpressionStmt |
+    CompoundStmtStmt CompoundStmt |
+    IfStmt Expression Statement |
+    IfElseStmt Expression Statement Statement |
+    WhileStmt Expression Statement |
+    ReturnStmt Expression |
+    EmptyReturnStmt |
+    WriteStmt Expression |
+    WritelnStmt
     deriving (Eq, Show)
 
-data TypedExpression =
-    TypedAssignmentExpression Identifier AssignmentMetaType TypedExpression NodeType |
-    TypedSimpleExpression TypedCompExp NodeType
+data Expression =
+    AssignmentExpression Identifier AssignmentMetaType Expression NodeType |
+    SimpleExpression CompExp NodeType
     deriving (Eq, Show)
 
-instance TypedNode TypedExpression where
-    nodeType (TypedAssignmentExpression _ _ _ n) = n
-    nodeType (TypedSimpleExpression _ n) = n
+instance TypedNode Expression where
+    nodeType (AssignmentExpression _ _ _ n) = n
+    nodeType (SimpleExpression _ n) = n
 
-data TypedCompExp =
-    TypedCompExp TypedE TypedRelOp TypedE NodeType |
-    TypedSimpleExp TypedE NodeType
+data CompExp =
+    CompExp E RelOp E NodeType |
+    SimpleExp E NodeType
     deriving (Eq, Show)
 
-instance TypedNode TypedCompExp where
-    nodeType (TypedCompExp _ _ _ n) = n
-    nodeType (TypedSimpleExp _ n) = n
+instance TypedNode CompExp where
+    nodeType (CompExp _ _ _ n) = n
+    nodeType (SimpleExp _ n) = n
 
-data TypedRelOp =
-    TypedLessThanOrEqualRelOp |
-    TypedLessThanRelOp |
-    TypedEqualRelOp |
-    TypedNotEqualRelOp |
-    TypedGreaterThanRelOp |
-    TypedGreaterThanOrEqualRelOp
+data E =
+    AddE E AddOp T NodeType |
+    SimpleE T NodeType
     deriving (Eq, Show)
 
-data TypedE =
-    TypedAddE TypedE TypedAddOp TypedT NodeType |
-    TypedSimpleE TypedT NodeType
+instance TypedNode E where
+    nodeType (AddE _ _ _ n) = n
+    nodeType (SimpleE _ n) = n
+
+data T =
+    MulT T MulOp F NodeType |
+    SimpleT F NodeType
     deriving (Eq, Show)
 
-instance TypedNode TypedE where
-    nodeType (TypedAddE _ _ _ n) = n
-    nodeType (TypedSimpleE _ n) = n
+instance TypedNode T where
+    nodeType (MulT _ _ _ n) = n
+    nodeType (SimpleT _ n) = n
 
-data TypedAddOp =
-    TypedPlusAddOp |
-    TypedMinusAddOp
+data F =
+    NegativeF F NodeType |
+    ReferenceF Factor NodeType |
+    DereferenceF Factor NodeType |
+    SimpleF Factor NodeType
     deriving (Eq, Show)
 
-data TypedT =
-    TypedMulT TypedT TypedMulOp TypedF NodeType |
-    TypedSimpleT TypedF NodeType
+instance TypedNode F where
+    nodeType (NegativeF _ n) = n
+    nodeType (ReferenceF _ n) = n
+    nodeType (DereferenceF _ n) = n
+    nodeType (SimpleF _ n) = n
+
+data Factor =
+    GroupedFactor Expression NodeType |
+    FunCallFactor FunCall NodeType |
+    ReadFactor NodeType |
+    DereferenceFactor Identifier NodeType |
+    VarFactor Identifier NodeType |
+    ArrayReferenceFactor Identifier Expression NodeType |
+    NumberFactor Int NodeType |
+    StringFactor String NodeType
     deriving (Eq, Show)
 
-instance TypedNode TypedT where
-    nodeType (TypedMulT _ _ _ n) = n
-    nodeType (TypedSimpleT _ n) = n
+instance TypedNode Factor where
+    nodeType (GroupedFactor _ n) = n
+    nodeType (FunCallFactor _ n) = n
+    nodeType (ReadFactor n) = n
+    nodeType (DereferenceFactor _ n) = n
+    nodeType (VarFactor _ n) = n
+    nodeType (ArrayReferenceFactor _ _ n) = n
+    nodeType (NumberFactor _ n) = n
+    nodeType (StringFactor _ n) = n
 
-data TypedMulOp =
-    TypedTimesMulOp |
-    TypedDivMulOp |
-    TypedModMulOp
+data FunCall =
+    FunCall Identifier [Expression] NodeType
     deriving (Eq, Show)
 
-data TypedF =
-    TypedNegativeF TypedF NodeType |
-    TypedReferenceF TypedFactor NodeType |
-    TypedDereferenceF TypedFactor NodeType |
-    TypedSimpleF TypedFactor NodeType
-    deriving (Eq, Show)
-
-instance TypedNode TypedF where
-    nodeType (TypedNegativeF _ n) = n
-    nodeType (TypedReferenceF _ n) = n
-    nodeType (TypedDereferenceF _ n) = n
-    nodeType (TypedSimpleF _ n) = n
-
-data TypedFactor =
-    TypedGroupedFactor TypedExpression NodeType |
-    TypedFunCallFactor TypedFunCall NodeType |
-    TypedReadFactor NodeType |
-    TypedDereferenceFactor Identifier NodeType |
-    TypedVarFactor Identifier NodeType |
-    TypedArrayReferenceFactor Identifier TypedExpression NodeType |
-    TypedNumberFactor Int NodeType |
-    TypedStringFactor String NodeType
-    deriving (Eq, Show)
-
-instance TypedNode TypedFactor where
-    nodeType (TypedGroupedFactor _ n) = n
-    nodeType (TypedFunCallFactor _ n) = n
-    nodeType (TypedReadFactor n) = n
-    nodeType (TypedDereferenceFactor _ n) = n
-    nodeType (TypedVarFactor _ n) = n
-    nodeType (TypedArrayReferenceFactor _ _ n) = n
-    nodeType (TypedNumberFactor _ n) = n
-    nodeType (TypedStringFactor _ n) = n
-
-data TypedFunCall =
-    TypedFunCall Identifier [TypedExpression] NodeType
-    deriving (Eq, Show)
-
-instance TypedNode TypedFunCall where
-    nodeType (TypedFunCall _ _ n) = n
+instance TypedNode FunCall where
+    nodeType (FunCall _ _ n) = n

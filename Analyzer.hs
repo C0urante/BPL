@@ -23,7 +23,7 @@ splitScan f base l = (single, reverse list) where
     helper b (x:xs) acc = helper next xs (result:acc) where
         (next, result) = f b x
 
-processProgram :: Grammar.Program -> TypedProgram
+processProgram :: Grammar.Program -> Program
 processProgram (Grammar.Program (Grammar.DeclarationList ds _) _) = verifiedResult where
     (s, ts) = splitScan programHelper emptyScope ds
     mainDec = if Types.contains s "main"
@@ -35,12 +35,12 @@ processProgram (Grammar.Program (Grammar.DeclarationList ds _) _) = verifiedResu
     verifiedResult = if funReturn mainFun == VoidFun
         then
             if null $ funArgs mainFun
-                then TypedProgram ts
+                then Program ts
                 else error "Main function cannot take any arguments"
         else
             error "Main function must have type void"
 
-programHelper :: Scope -> Grammar.Declaration -> (Scope, TypedDeclaration)
+programHelper :: Scope -> Grammar.Declaration -> (Scope, Declaration)
 programHelper s d = case d of
     (Grammar.VarDecDeclaration v _) -> (newScope, newDec) where
         newScope = addToScope s (extractVarName v) (VarDecType varType)
@@ -50,11 +50,11 @@ programHelper s d = case d of
         newScope = addFunToScope s f
         newDec = processDeclaration newScope d
 
-processDeclaration :: Scope -> Grammar.Declaration -> TypedDeclaration
+processDeclaration :: Scope -> Grammar.Declaration -> Declaration
 processDeclaration _ (Grammar.VarDecDeclaration v _) = result where
-    result = TypedVarDec (extractVarName v) (extractVarType v)
+    result = VarDec (extractVarName v) (extractVarType v)
 processDeclaration s (Grammar.FunDecDeclaration (Grammar.FunDec t i p c l) _) = result where
-    result = TypedFunDec i returnType params body
+    result = FunDec i returnType params body
     params = processParams p
     newScope = addParamsToScope s (Grammar.FunDec t i p c l)
     returnType = extractFunReturnType t
@@ -66,40 +66,40 @@ processParams (Grammar.Params (Grammar.ParamList ps _) _) = zip is vs where
     is = map extractParamName ps
     vs = map silentlyExtractParamType ps
 
-processCompoundStmt :: Scope -> NodeType -> Grammar.CompoundStmt -> TypedCompoundStmt
+processCompoundStmt :: Scope -> NodeType -> Grammar.CompoundStmt -> CompoundStmt
 processCompoundStmt _ _ (Grammar.CompoundStmt _ (Grammar.EmptyStatementList _) _) =
-    TypedCompoundStmt (TypedLocalDecs []) []
+    CompoundStmt (LocalDecs []) []
 processCompoundStmt s n (Grammar.CompoundStmt l (Grammar.StatementList ss _) _) =
-    TypedCompoundStmt localDecs statements where
+    CompoundStmt localDecs statements where
         localDecs = processLocalDecs l
         decList = case localDecs of
-            (TypedLocalDecs ds) -> ds
+            (LocalDecs ds) -> ds
         statements = map (processStatement newScope n) ss
         newScope = foldl addVarToScope s decList
         addVarToScope s' (i, v) = addToScope s' i (VarDecType v)
 
-processLocalDecs :: Grammar.LocalDecs -> TypedLocalDecs
-processLocalDecs (Grammar.EmptyLocalDecs _) = TypedLocalDecs []
-processLocalDecs (Grammar.LocalDecs vs _) = TypedLocalDecs (map processLocalVarDec vs)
+processLocalDecs :: Grammar.LocalDecs -> LocalDecs
+processLocalDecs (Grammar.EmptyLocalDecs _) = LocalDecs []
+processLocalDecs (Grammar.LocalDecs vs _) = LocalDecs (map processLocalVarDec vs)
 
 processLocalVarDec :: Grammar.VarDec -> (Identifier, VarType)
 processLocalVarDec v = (i, t) where
     i = extractVarName v
     t = extractVarType v
 
-processStatement :: Scope -> NodeType -> Grammar.Statement -> TypedStatement
+processStatement :: Scope -> NodeType -> Grammar.Statement -> Statement
 processStatement s _ (Grammar.ExpressionStmt e _) =
-    TypedExpressionStmt (processExpression s e)
+    ExpressionStmt (processExpression s e)
 processStatement _ _ (Grammar.EmptyExpressionStmt _) =
-    TypedEmptyExpressionStmt
+    EmptyExpressionStmt
 processStatement s n (Grammar.CompoundStmtStmt c _) =
-    TypedCompoundStmtStmt (processCompoundStmt s n c)
+    CompoundStmtStmt (processCompoundStmt s n c)
 processStatement s n (Grammar.IfStmt e s' line) =
     verifiedResult where
         e' = processExpression s e
         s'' = processStatement s n s'
         verifiedResult = case nodeType e' of
-            (IntNode, RawNode) -> TypedIfStmt e' s''
+            (IntNode, RawNode) -> IfStmt e' s''
             _ -> error $
                 "Line " ++ show line ++ ": clause of if-statement must be of type raw integer"
 processStatement s n (Grammar.IfElseStmt e s' s'' line) =
@@ -108,7 +108,7 @@ processStatement s n (Grammar.IfElseStmt e s' s'' line) =
         s''' = processStatement s n s'
         s'''' = processStatement s n s''
         verifiedResult = case nodeType e' of
-            (IntNode, RawNode) -> TypedIfElseStmt e' s''' s''''
+            (IntNode, RawNode) -> IfElseStmt e' s''' s''''
             _ -> error $
                 "Line " ++ show line ++ ": clause of if-else-statement must be of type raw integer"
 processStatement s n (Grammar.WhileStmt e s' line) =
@@ -116,7 +116,7 @@ processStatement s n (Grammar.WhileStmt e s' line) =
         e' = processExpression s e
         s'' = processStatement s n s'
         verifiedResult = case nodeType e' of
-            (IntNode, RawNode) -> TypedWhileStmt e' s''
+            (IntNode, RawNode) -> WhileStmt e' s''
             _ -> error $
                 "Line " ++ show line ++ ": clause of while-statement must be of type raw integer"
 processStatement s n (Grammar.ReturnStmt e line) =
@@ -125,7 +125,7 @@ processStatement s n (Grammar.ReturnStmt e line) =
         verifiedResult = if nodeType e' == n
             then
                 if nodeRaw n /= VoidNode
-                    then TypedReturnStmt e'
+                    then ReturnStmt e'
                     else error $
                         "Line " ++ show line ++ ": void function cannot have non-empty return statement"
                 else error $
@@ -133,23 +133,23 @@ processStatement s n (Grammar.ReturnStmt e line) =
 processStatement _ n (Grammar.EmptyReturnStmt line) =
     verifiedResult where
         verifiedResult = if nodeRaw n == VoidNode
-            then TypedEmptyReturnStmt
+            then EmptyReturnStmt
             else error $
                 "Line " ++ show line ++ ": non-void function cannot have empty return statement"
 processStatement s _ (Grammar.WriteStmt e line) =
     verifiedResult where
         e' = processExpression s e
         verifiedResult = case nodeType e' of
-            (IntNode, RawNode) -> TypedWriteStmt e'
-            (StringNode, RawNode) -> TypedWriteStmt e'
+            (IntNode, RawNode) -> WriteStmt e'
+            (StringNode, RawNode) -> WriteStmt e'
             _ -> error $
                 "Line " ++ show line ++ ": arguments to write statement can only be of type raw integer or raw string"
 processStatement _ _ (Grammar.WritelnStmt _) =
-    TypedWritelnStmt
+    WritelnStmt
 
-processExpression :: Scope -> Grammar.Expression -> TypedExpression
+processExpression :: Scope -> Grammar.Expression -> Expression
 processExpression s (Grammar.AssignmentExpression (Grammar.Var i m l) e line) =
-    TypedAssignmentExpression i a e' loggedNode where
+    AssignmentExpression i a e' loggedNode where
         dec = Types.lookup s i l
         var = case dec of
             VarDecType v -> v
@@ -185,16 +185,15 @@ processExpression s (Grammar.AssignmentExpression (Grammar.Var i m l) e line) =
                 "Line " ++ show line ++ ": types of left- and right-hand sides do not match"
         loggedNode = logAssignment verifiedNode "Expression" line
 processExpression s (Grammar.SimpleExpression c line) =
-    TypedSimpleExpression compExp loggedNode where
+    SimpleExpression compExp loggedNode where
         compExp = processCompExp s c
         node = nodeType compExp
         loggedNode = logAssignment node "Expression" line
 
-processCompExp :: Scope -> Grammar.CompExp -> TypedCompExp
+processCompExp :: Scope -> Grammar.CompExp -> CompExp
 processCompExp s (Grammar.CompExp e r e' line) =
-    TypedCompExp e'' r' e''' loggedNode where
+    CompExp e'' r e''' loggedNode where
         e'' = processE s e
-        r' = toTypedRelOp r
         e''' = processE s e'
         rawInt = (IntNode, RawNode)
         verifiedNode = if nodeType e'' == rawInt && nodeType e''' == rawInt
@@ -203,16 +202,15 @@ processCompExp s (Grammar.CompExp e r e' line) =
                 "Line " ++ show line ++ ": both operands of CompExp must be of type raw integer"
         loggedNode = logAssignment verifiedNode "CompExp" line
 processCompExp s (Grammar.SimpleExp e line) =
-    TypedSimpleExp e' loggedNode where
+    SimpleExp e' loggedNode where
         e' = processE s e
         node = nodeType e'
         loggedNode = logAssignment node "CompExp" line
 
-processE :: Scope -> Grammar.E -> TypedE
+processE :: Scope -> Grammar.E -> E
 processE s (Grammar.AddE e a t line) =
-    TypedAddE e' a' t' loggedNode where
+    AddE e' a t' loggedNode where
         e' = processE s e
-        a' = toTypedAddOp a
         t' = processT s t
         rawInt = (IntNode, RawNode)
         verifiedNode = if nodeType e' == rawInt && nodeType t' == rawInt
@@ -221,16 +219,15 @@ processE s (Grammar.AddE e a t line) =
                 "Line " ++ show line ++ ": both operands of AddE must be of type raw integer"
         loggedNode = logAssignment verifiedNode "E" line
 processE s (Grammar.SimpleE t line) =
-    TypedSimpleE t' loggedNode where
+    SimpleE t' loggedNode where
         t' = processT s t
         node = nodeType t'
         loggedNode = logAssignment node "E" line
 
-processT :: Scope -> Grammar.T -> TypedT
+processT :: Scope -> Grammar.T -> T
 processT s (Grammar.MulT t m f line) =
-    TypedMulT t' m' f' loggedNode where
+    MulT t' m f' loggedNode where
         t' = processT s t
-        m' = toTypedMulOp m
         f' = processF s f
         rawInt = (IntNode, RawNode)
         verifiedNode = if nodeType t' == rawInt && nodeType f' == rawInt
@@ -239,12 +236,12 @@ processT s (Grammar.MulT t m f line) =
                 "Line " ++ show line ++ ": both operands of MulT must be of type raw integer"
         loggedNode = logAssignment verifiedNode "T" line
 processT s (Grammar.SimpleT f line) =
-    TypedSimpleT f' loggedNode where
+    SimpleT f' loggedNode where
         f' = processF s f
         node = nodeType f'
         loggedNode = logAssignment node "T" line
 
-processF :: Scope -> Grammar.F -> TypedF
+processF :: Scope -> Grammar.F -> F
 processF s (Grammar.NegativeF f line) =
     result where
         f' = processF s f
@@ -254,7 +251,7 @@ processF s (Grammar.NegativeF f line) =
             _ -> error $
                 "Line " ++ show line ++ ": negative F must have child of type raw integer"
         loggedNode = logAssignment verifiedNode "F" line
-        result = TypedNegativeF f' loggedNode
+        result = NegativeF f' loggedNode
 processF s (Grammar.ReferenceF factor line) =
     result where
         factor' = processFactor s factor
@@ -266,7 +263,7 @@ processF s (Grammar.ReferenceF factor line) =
             (_, ArrayNode) -> error $
                 "Line " ++ show line ++ ": cannot reference array factor"
         loggedNode = logAssignment verifiedNode "F" line
-        result = TypedReferenceF factor' loggedNode
+        result = ReferenceF factor' loggedNode
 processF s (Grammar.DereferenceF factor line) =
     result where
         factor' = processFactor s factor
@@ -278,26 +275,26 @@ processF s (Grammar.DereferenceF factor line) =
             (_, ArrayNode) -> error $
                 "Line " ++ show line ++ ": cannot dereference array factor"
         loggedNode = logAssignment verifiedNode "F" line
-        result = TypedDereferenceF factor' loggedNode
+        result = DereferenceF factor' loggedNode
 processF s (Grammar.SimpleF factor line) =
-    TypedSimpleF factor' loggedNode where
+    SimpleF factor' loggedNode where
         factor' = processFactor s factor
         loggedNode = logAssignment (nodeType factor') "F" line
 
-processFactor :: Scope -> Grammar.Factor -> TypedFactor
+processFactor :: Scope -> Grammar.Factor -> Factor
 processFactor s (Grammar.GroupedFactor e line) =
-    TypedGroupedFactor expression loggedNode where
+    GroupedFactor expression loggedNode where
         expression = processExpression s e
         loggedNode = logAssignment (nodeType expression) "Factor" line
 processFactor s (Grammar.FunCallFactor f line) =
-    TypedFunCallFactor funCall loggedNode where
+    FunCallFactor funCall loggedNode where
         funCall = processFunCall s f
         loggedNode = logAssignment (nodeType funCall) "Factor" line
 processFactor _ (Grammar.ReadFactor line) = result where
     loggedNode = logAssignment (IntNode, RawNode) "Factor" line
-    result = TypedReadFactor loggedNode
+    result = ReadFactor loggedNode
 processFactor s (Grammar.DereferenceFactor i line) =
-    TypedVarFactor i loggedNode where
+    VarFactor i loggedNode where
         dec = Types.lookup s i line
         var = case dec of
             VarDecType v -> v
@@ -311,7 +308,7 @@ processFactor s (Grammar.DereferenceFactor i line) =
                 "Line " ++ show line ++ ": cannot dereference array variable " ++ i
         loggedNode = logAssignment (varNodeType (ptr, PointerVar)) "Factor" line
 processFactor s (Grammar.VarFactor i line) =
-    TypedVarFactor i loggedNode where
+    VarFactor i loggedNode where
         dec = Types.lookup s i line
         var = case dec of
             VarDecType v -> v
@@ -319,7 +316,7 @@ processFactor s (Grammar.VarFactor i line) =
                 "Line " ++ show line ++ ": cannot reference function " ++ i ++ " without calling it"
         loggedNode = logAssignment (varNodeType var) "Factor" line
 processFactor s (Grammar.ArrayReferenceFactor i e line) =
-    TypedArrayReferenceFactor i verifiedIndex loggedNode where
+    ArrayReferenceFactor i verifiedIndex loggedNode where
         index = processExpression s e
         verifiedIndex = if nodeType index == (IntNode, RawNode)
             then index
@@ -339,14 +336,14 @@ processFactor s (Grammar.ArrayReferenceFactor i e line) =
         loggedNode = logAssignment (varNodeType (arr, RawVar)) "Factor" line
 processFactor _ (Grammar.NumberFactor n line) = result where
     loggedNode = logAssignment (IntNode, RawNode) "Factor" line
-    result = TypedNumberFactor n loggedNode
+    result = NumberFactor n loggedNode
 processFactor _ (Grammar.StringFactor s' line) = result where
     loggedNode = logAssignment (StringNode, RawNode) "Factor" line
-    result = TypedStringFactor s' loggedNode
+    result = StringFactor s' loggedNode
 
-processFunCall :: Scope -> Grammar.FunCall -> TypedFunCall
+processFunCall :: Scope -> Grammar.FunCall -> FunCall
 processFunCall s (Grammar.FunCall i (Grammar.EmptyArgs _) line) =
-    TypedFunCall i [] loggedReturnType where
+    FunCall i [] loggedReturnType where
         dec = Types.lookup s i line
         fun = case dec of
             VarDecType _ -> error $ "Line " ++ show line ++ ": cannot call variable " ++ i
@@ -358,7 +355,7 @@ processFunCall s (Grammar.FunCall i (Grammar.EmptyArgs _) line) =
                     "Line " ++ show line ++ ": function " ++ i ++ " given invalid arguments"
         loggedReturnType = logAssignment verifiedReturnType "FunCall" line
 processFunCall s (Grammar.FunCall i (Grammar.Args (Grammar.ArgList es _) _) line) =
-    TypedFunCall i args loggedReturnType where
+    FunCall i args loggedReturnType where
         args = map (processExpression s) es
         argTypes = map nodeType args
         dec = Types.lookup s i line
@@ -464,20 +461,3 @@ extractParamMetaType :: Grammar.ParamMetaType -> VarMetaType
 extractParamMetaType Grammar.RawParam = RawVar
 extractParamMetaType Grammar.PointerParam = PointerVar
 extractParamMetaType Grammar.ArrayParam = ArrayVar
-
-toTypedRelOp :: Grammar.RelOp -> TypedRelOp
-toTypedRelOp (Grammar.LessThanOrEqualRelOp _) = TypedLessThanOrEqualRelOp
-toTypedRelOp (Grammar.LessThanRelOp _) = TypedLessThanRelOp
-toTypedRelOp (Grammar.EqualRelOp _) = TypedEqualRelOp
-toTypedRelOp (Grammar.NotEqualRelOp _) = TypedNotEqualRelOp
-toTypedRelOp (Grammar.GreaterThanRelOp _) = TypedGreaterThanRelOp
-toTypedRelOp (Grammar.GreaterThanOrEqualRelOp _) = TypedGreaterThanOrEqualRelOp
-
-toTypedAddOp :: Grammar.AddOp -> TypedAddOp
-toTypedAddOp (Grammar.PlusAddOp _) = TypedPlusAddOp
-toTypedAddOp (Grammar.MinusAddOp _) = TypedMinusAddOp
-
-toTypedMulOp :: Grammar.MulOp -> TypedMulOp
-toTypedMulOp (Grammar.TimesMulOp _) = TypedTimesMulOp
-toTypedMulOp (Grammar.DivMulOp _) = TypedDivMulOp
-toTypedMulOp (Grammar.ModMulOp _) = TypedModMulOp
