@@ -9,7 +9,6 @@
 -- a call to the tokenize function of the Scanner module--that is, that it
 -- contains a stream of regular, valid tokens, followed by a single EOF token
 -- repeated ad infinitum.
---      TODO: Add line number field to parsed grammar constructs.
 
 module Parser where
 
