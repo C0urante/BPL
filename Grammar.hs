@@ -86,7 +86,8 @@ data DeclarationList =
     deriving (Eq, Show)
 -- 3. DECLARATION -> VAR_DEC | FUN_DEC
 data Declaration =
-    VarDecDeclaration VarDec LineNumber | FunDecDeclaration FunDec LineNumber
+    VarDecDeclaration VarDec LineNumber |
+    FunDecDeclaration FunDec LineNumber
     deriving (Eq, Show)
 -- 4. VAR_DEC -> TYPE_SPECIFIER <id> ;
 --             | TYPE_SPECIFIER *<id> ;
@@ -96,7 +97,9 @@ data VarDec =
     deriving (Eq, Show)
 -- 5. TYPE_SPECIFIER -> int | void | string
 data TypeSpecifier =
-    IntType LineNumber | StringType LineNumber | VoidType LineNumber
+    IntType LineNumber |
+    StringType LineNumber |
+    VoidType LineNumber
     deriving (Eq, Show)
 -- 6. FUN_DEC -> TYPE_SPECIFIER <id> ( PARAMS ) COMPOUND_STMT
 data FunDec =
@@ -104,7 +107,8 @@ data FunDec =
     deriving (Eq, Show)
 -- 7. PARAMS -> void | PARAM_LIST
 data Params =
-    Params ParamList LineNumber | EmptyParams LineNumber
+    Params ParamList LineNumber |
+    EmptyParams LineNumber
     deriving (Eq, Show)
 -- 8. PARAM_LIST -> PARAM_LIST , PARAM | PARAM
 data ParamList =
@@ -122,11 +126,13 @@ data CompoundStmt =
     deriving (Eq, Show)
 -- 11. LOCAL_DECS -> LOCAL_DECS VAR_DEC | <empty>
 data LocalDecs =
-    LocalDecs [VarDec] LineNumber | EmptyLocalDecs LineNumber
+    LocalDecs [VarDec] LineNumber |
+    EmptyLocalDecs LineNumber
     deriving (Eq, Show)
 -- 12. STATEMENT_LIST -> STATEMENT_LIST STATEMENT | <empty>
 data StatementList =
-    StatementList [Statement] LineNumber | EmptyStatementList LineNumber
+    StatementList [Statement] LineNumber |
+    EmptyStatementList LineNumber
     deriving (Eq, Show)
 -- 13. STATEMENT -> EXPRESSION_STMT
 --                | COMPOUND_STMT
@@ -163,7 +169,8 @@ data Var =
     deriving (Eq, Show)
 -- 21. COMP_EXP -> E RELOP E | E
 data CompExp =
-    CompExp E RelOp E LineNumber | SimpleExp E LineNumber
+    CompExp E RelOp E LineNumber |
+    SimpleExp E LineNumber
     deriving (Eq, Show)
 -- 22. RELOP -> <= | < | == | != | > | >=
 data RelOp =
@@ -176,19 +183,24 @@ data RelOp =
     deriving (Eq, Show)
 -- 23. E -> E ADDOP T | T
 data E =
-    AddE E AddOp T LineNumber | SimpleE T LineNumber
+    AddE E AddOp T LineNumber |
+    SimpleE T LineNumber
     deriving (Eq, Show)
 -- 24. ADDOP -> + | -
 data AddOp =
-    PlusAddOp LineNumber | MinusAddOp LineNumber
+    PlusAddOp LineNumber |
+    MinusAddOp LineNumber
     deriving (Eq, Show)
 -- 25. T -> T MULOP F | F
 data T =
-    MulT T MulOp F LineNumber | SimpleT F LineNumber
+    MulT T MulOp F LineNumber |
+    SimpleT F LineNumber
     deriving (Eq, Show)
 -- 26. MULOP -> * | / | %
 data MulOp =
-    TimesMulOp LineNumber | DivMulOp LineNumber | ModMulOp LineNumber
+    TimesMulOp LineNumber |
+    DivMulOp LineNumber |
+    ModMulOp LineNumber
     deriving (Eq, Show)
 -- 27. F -> -F | &Factor | *Factor | Factor
 data F =
@@ -221,7 +233,8 @@ data FunCall =
     deriving (Eq, Show)
 -- 30. ARGS -> ARG_LIST | <empty>
 data Args =
-    Args ArgList LineNumber | EmptyArgs LineNumber
+    Args ArgList LineNumber |
+    EmptyArgs LineNumber
     deriving (Eq, Show)
 -- 31. ARG_LIST -> ARG_LIST , EXPRESSION | EXPRESSION
 data ArgList =
