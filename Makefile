@@ -9,8 +9,8 @@ AnalyzerTest: AnalyzerTest.hs
 Analyzer: Analyzer.hs
 	$(HC) Analyzer.hs $(HCFLAGS)
 
-Environment: Environment.hs
-	$(HC) Environmeht.hs $(HCFLAGS)
+Types: Types.hs
+	$(HC) Types.hs $(HCFLAGS)
 
 ParserTest: ParserTest.hs
 	$(HC) ParserTest.hs $(HCFLAGS)
