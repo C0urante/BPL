@@ -73,7 +73,7 @@ instance Show RegisterHalf where
             SaveFiveHalf     -> "r14d"
             SaveSixHalf      -> "r15d"
 
-data Offset = Offset Register Integer
+data Offset = Offset Register Int
               deriving (Eq)
 instance Show Offset where
     show (Offset register offset) = show offset ++ "(" ++ show register ++ ")"
@@ -115,11 +115,12 @@ instance Show DestinationHalf where
     show (DestinationHalfOffset o) =   show o
 
 data AssemblyLine = DataDirective
-                  | CommDirective Symbol Integer Integer
+                  | CommDirective Symbol Int Int
                   | ReadOnlyDirective
                   | StringDirective Symbol String
                   | TextDirective
                   | GlobalDirective Symbol
+                  | LabelDirective Symbol
                   | MoveInstruction Source Destination
                   | MoveHalfInstruction SourceHalf DestinationHalf
                   | LoadAddressInstruction Source Destination
@@ -150,42 +151,43 @@ data AssemblyLine = DataDirective
 
 instance Show AssemblyLine where
     show DataDirective =                    ".data"
-    show (CommDirective i b a) =            ".comm\t" ++ i ++ ", " ++ show b ++ ", " ++ show a
+    show (CommDirective i b a) =            "\t.comm\t" ++ i ++ ", " ++ show b ++ ", " ++ show a
     show ReadOnlyDirective =                ".section\t.rodata"
-    show (StringDirective i s) =            i ++ ":\t.string " ++ show s
+    show (StringDirective i s) =            "\t" ++ i ++ ":\t.string " ++ show s
     show TextDirective =                    ".text"
-    show (GlobalDirective i) =              ".globl\t" ++ i
-    show (MoveInstruction s d) =            "movq\t" ++ show s ++ ", " ++ show d
-    show (MoveHalfInstruction s d) =        "movl\t" ++ show s ++ ", " ++ show d
-    show (ClearInstruction d) =             "clrq\t" ++ show d
-    show (ClearHalfInstruction d) =         "clrl\t" ++ show d
-    show (LoadAddressInstruction s d) =     "leaq\t" ++ show s ++ ", " ++ show d
-    show (PushInstruction s) =              "push\t" ++ show s
-    show (PopInstruction d) =               "pop\t"  ++ show d
-    show (JumpInstruction l) =              "jump\t" ++ l
-    show (CompareInstruction s d) =         "cmpl\t" ++ show s ++ ", " ++ show d
-    show (CompareHalfInstruction s d) =     "cmpl\t" ++ show s ++ ", " ++ show d
-    show (JumpEqualInstruction l) =         "je\t"   ++ l
-    show (JumpNotEqualInstruction l) =      "jne\t"  ++ l
-    show (JumpLessInstruction l) =          "jl\t"   ++ l
-    show (JumpLessEqualInstruction l) =     "jle\t"  ++ l
-    show (JumpGreaterInstruction l) =       "jg\t"   ++ l
-    show (JumpGreaterEqualInstruction l) =  "jge\t"  ++ l
-    show (JumpZeroInstruction l) =          "jz\t"   ++ l
-    show (CallInstruction l) =              "call\t" ++ l
-    show ReturnInstruction =                "ret"
-    show (AddInstruction s d) =             "addq\t" ++ show s ++ ", " ++ show d
-    show (AddHalfInstruction s d) =         "addl\t" ++ show s ++ ", " ++ show d
-    show (SubInstruction s d) =             "subq\t" ++ show s ++ ", " ++ show d
-    show (SubHalfInstruction s d) =         "subl\t" ++ show s ++ ", " ++ show d
-    show (MulInstruction s d) =             "imul\t" ++ show s ++ ", " ++ show d
+    show (GlobalDirective i) =              "\t.globl\t" ++ i
+    show (LabelDirective s) =               s ++ ":"
+    show (MoveInstruction s d) =            "\tmovq\t" ++ show s ++ ", " ++ show d
+    show (MoveHalfInstruction s d) =        "\tmovl\t" ++ show s ++ ", " ++ show d
+    show (ClearInstruction d) =             "\tclrq\t" ++ show d
+    show (ClearHalfInstruction d) =         "\tclrl\t" ++ show d
+    show (LoadAddressInstruction s d) =     "\tleaq\t" ++ show s ++ ", " ++ show d
+    show (PushInstruction s) =              "\tpush\t" ++ show s
+    show (PopInstruction d) =               "\tpop\t"  ++ show d
+    show (JumpInstruction l) =              "\tjump\t" ++ l
+    show (CompareInstruction s d) =         "\tcmpl\t" ++ show s ++ ", " ++ show d
+    show (CompareHalfInstruction s d) =     "\tcmpl\t" ++ show s ++ ", " ++ show d
+    show (JumpEqualInstruction l) =         "\tje\t"   ++ l
+    show (JumpNotEqualInstruction l) =      "\tjne\t"  ++ l
+    show (JumpLessInstruction l) =          "\tjl\t"   ++ l
+    show (JumpLessEqualInstruction l) =     "\tjle\t"  ++ l
+    show (JumpGreaterInstruction l) =       "\tjg\t"   ++ l
+    show (JumpGreaterEqualInstruction l) =  "\tjge\t"  ++ l
+    show (JumpZeroInstruction l) =          "\tjz\t"   ++ l
+    show (CallInstruction l) =              "\tcall\t" ++ l
+    show ReturnInstruction =                "\tret"
+    show (AddInstruction s d) =             "\taddq\t" ++ show s ++ ", " ++ show d
+    show (AddHalfInstruction s d) =         "\taddl\t" ++ show s ++ ", " ++ show d
+    show (SubInstruction s d) =             "\tsubq\t" ++ show s ++ ", " ++ show d
+    show (SubHalfInstruction s d) =         "\tsubl\t" ++ show s ++ ", " ++ show d
+    show (MulInstruction s d) =             "\timul\t" ++ show s ++ ", " ++ show d
     show (DivInstruction s s') =            showDivModInstruction s s'
     show (ModInstruction s s') =            showDivModInstruction s s'
 
 showDivModInstruction :: SourceHalf -> SourceHalf -> String
 showDivModInstruction dividend divisor = line1 ++ line2 ++ line3 ++ line4 ++ line5 where
-    line1 = "movl\t" ++ show dividend ++ ", " ++ "%ebp\n"
-    line2 = "movl\t" ++ show divisor  ++ ", " ++ "%eax\n"
-    line3 = "cltq\n"
-    line4 = "clto\n"
-    line5 = "idivl\t%ebp"
+    line1 = "\tmovl\t" ++ show dividend ++ ", " ++ "%ebp\n"
+    line2 = "\tmovl\t" ++ show divisor  ++ ", " ++ "%eax\n"
+    line3 = "\tcltq\n"
+    line4 = "\tclto\n"
+    line5 = "\tidivl\t%ebp"
