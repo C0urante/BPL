@@ -152,7 +152,7 @@ instance Show AssemblyLine where
     show DataDirective =                    ".data"
     show (CommDirective i b a) =            ".comm\t" ++ i ++ ", " ++ show b ++ ", " ++ show a
     show ReadOnlyDirective =                ".section\t.rodata"
-    show (StringDirective i s) =            i ++ ": .string " ++ show s
+    show (StringDirective i s) =            i ++ ":\t.string " ++ show s
     show TextDirective =                    ".text"
     show (GlobalDirective i) =              ".globl\t" ++ i
     show (MoveInstruction s d) =            "movq\t" ++ show s ++ ", " ++ show d
