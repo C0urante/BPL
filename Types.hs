@@ -8,7 +8,7 @@ type LineNumber = Int
 data VarMetaType =
     RawVar |
     PointerVar |
-    ArrayVar
+    ArrayVar Int
     deriving (Eq, Show)
 
 data VarRawType =
@@ -97,7 +97,7 @@ showVar (t, m) = metaType m ++ " " ++ rawType t where
     rawType StringVar = "string"
     metaType RawVar = "raw"
     metaType PointerVar = "pointer to"
-    metaType ArrayVar = "array of"
+    metaType (ArrayVar _) = "array of"
 
 showNode :: NodeType -> String
 showNode (r, m) = metaType ++ " " ++ rawType where
@@ -121,7 +121,7 @@ varNodeType (r, m) = (raw, meta) where
     meta = case m of
         RawVar -> RawNode
         PointerVar -> PointerNode
-        ArrayVar -> ArrayNode
+        (ArrayVar _) -> ArrayNode
 
 funNodeType :: FunType -> NodeType
 funNodeType (r, _) = (raw, RawNode) where

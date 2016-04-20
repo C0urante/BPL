@@ -177,10 +177,10 @@ processExpression s (Grammar.AssignmentExpression (Grammar.Var i m l) e line) =
                 PointerVar -> (varRaw var, RawVar)
                 RawVar -> error $
                     "Line " ++ show line ++ ": cannot assign to address of raw variable " ++ i
-                ArrayVar -> error $
+                (ArrayVar _) -> error $
                     "Line " ++ show line ++ ": cannot assign to address of array variable " ++ i
             Grammar.ArrayVar _ -> case varMeta var of
-                ArrayVar -> (varRaw var, RawVar)
+                (ArrayVar _) -> (varRaw var, RawVar)
                 RawVar -> error $
                     "Line " ++ show line ++ ": cannot assign to index of raw variable " ++ i
                 PointerVar -> error $
@@ -320,7 +320,7 @@ processFactor s (Grammar.DereferenceFactor i line) =
             (r, PointerVar) -> r
             (_, RawVar) -> error $
                 "Line " ++ show line ++ ": cannot dereference raw variable " ++ i
-            (_, ArrayVar) -> error $
+            (_, (ArrayVar _)) -> error $
                 "Line " ++ show line ++ ": cannot dereference array variable " ++ i
         loggedNode = logAssignment (varNodeType (ptr, PointerVar)) "Factor" line
 processFactor s (Grammar.VarFactor i line) =
@@ -344,7 +344,7 @@ processFactor s (Grammar.ArrayReferenceFactor i e line) =
             FunDecType _ -> error $
                 "Line " ++ show line ++ ": cannot index function " ++ i
         arr = case var of
-            (a, ArrayVar) -> a
+            (a, (ArrayVar _)) -> a
             (_, RawVar) -> error $
                 "Line " ++ show line ++ ": cannot index raw variable " ++ i
             (_, PointerVar) -> error $
@@ -417,7 +417,7 @@ extractRawVarType (Grammar.VoidType _) i l =
 extractMetaVarType :: Grammar.VarDecMetaType -> VarMetaType
 extractMetaVarType Grammar.RawVarDec = RawVar
 extractMetaVarType Grammar.PointerVarDec = PointerVar
-extractMetaVarType (Grammar.ArrayVarDec _) = ArrayVar
+extractMetaVarType (Grammar.ArrayVarDec n) = ArrayVar n
 
 addFunToScope :: Scope -> Grammar.FunDec -> Scope
 addFunToScope s f = addToScope s i t where
@@ -476,4 +476,4 @@ silentlyExtractParamType (Grammar.Param t m i l) = (rawType, metaType) where
 extractParamMetaType :: Grammar.ParamMetaType -> VarMetaType
 extractParamMetaType Grammar.RawParam = RawVar
 extractParamMetaType Grammar.PointerParam = PointerVar
-extractParamMetaType Grammar.ArrayParam = ArrayVar
+extractParamMetaType Grammar.ArrayParam = ArrayVar 0
