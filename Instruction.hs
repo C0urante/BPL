@@ -144,6 +144,8 @@ data AssemblyLine = DataDirective
                   | AddHalfInstruction SourceHalf DestinationHalf
                   | SubInstruction Source Destination
                   | SubHalfInstruction SourceHalf DestinationHalf
+                  | NegateInstruction Destination
+                  | NegateHalfInstruction DestinationHalf
                   | MulInstruction SourceHalf Destination
                   | DivInstruction SourceHalf SourceHalf
                   | ModInstruction SourceHalf SourceHalf
@@ -180,6 +182,8 @@ instance Show AssemblyLine where
     show (AddHalfInstruction s d) =         "\taddl\t" ++ show s ++ ", " ++ show d
     show (SubInstruction s d) =             "\tsubq\t" ++ show s ++ ", " ++ show d
     show (SubHalfInstruction s d) =         "\tsubl\t" ++ show s ++ ", " ++ show d
+    show (NegateInstruction d) =            "\tnegq\t" ++ show d
+    show (NegateHalfInstruction d) =        "\tnegl\t" ++ show d
     show (MulInstruction s d) =             "\timul\t" ++ show s ++ ", " ++ show d
     show (DivInstruction s s') =            showDivModInstruction s s'
     show (ModInstruction s s') =            showDivModInstruction s s'
