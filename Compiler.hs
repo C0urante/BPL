@@ -2,14 +2,18 @@ module Compiler where
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import Data.List (partition)
 import Types hiding (Scope)
 import Instruction
 
---  Integers correspond to frame offsets for locals and addresses for globals,
--- and Strings correspond to labels for functions
+type Variable = (Identifier, VarType)
+type Function = (Identifier, FunReturnType, [(Identifier, VarType)], CompoundStmt)
+
+--  Integers correspond to frame offsets for locals, and Labels for the actual
+-- assembly label used for globals and functions
 data ScopeValue =
     LocalVariable Integer |
-    GlobalVariable Integer |
+    GlobalVariable Label |
     Function Label
 type Scope = Map.Map Identifier ScopeValue
 type Strings = Map.Map String Label
@@ -17,25 +21,21 @@ type Code = [AssemblyLine]
 
 compile :: Program -> Code
 compile p = result where
-    (readOnlyCode, _, readRemainderLabels) = readOnlySection p labelStream
-    (dataCode, _, _) = dataSection p readRemainderLabels
-    result = readOnlyCode ++ dataCode
+    (readOnlyCode, strings) = readOnlySection p
+    (dataCode, scope) = dataSection p
+    textCode = textSection p scope strings
+    result = readOnlyCode ++ dataCode ++ textCode
 
-labelStream :: [Label]
-labelStream = map ((".LC" ++) . leftPad 2 '0' . show) ([0..] :: [Int]) where
-    leftPad :: Int -> Char -> String -> String
-    leftPad l c s = let stringLength = length s in
-        if stringLength >= l
-            then s
-            else replicate (l - stringLength) c ++ s
+labelStream :: String -> [Label]
+labelStream prefix = map (((".L" ++ prefix) ++) . show) ([0..] :: [Int])
 
 -- As of right now, the only purpose for this is to generate directives for string
 -- literals used in the program and in calls to printf/scanf, and track the labels
 -- given to string literals.
-readOnlySection :: Program -> [Label] -> (Code, Strings, [Label])
-readOnlySection p ls = (code, strings, labels) where
+readOnlySection :: Program -> (Code, Strings)
+readOnlySection p = (code, strings) where
     stringLiterals = extractStringLiterals p
-    (stringCode, strings, labels) = stringLabels stringLiterals ls
+    (stringCode, strings) = stringLabels stringLiterals
     code = [ReadOnlyDirective] ++ readLabelCode ++ writeLabelCode ++ stringCode
 
 readLabelCode :: Code
@@ -49,36 +49,20 @@ writeLabelCode = [newLineWrite, stringWrite, integerWrite] where
 
 -- Have to generate code that assigns each string a label, but also have to keep
 -- track of each of these labels and return the remainder of the label stream.
-stringLabels :: [String] -> [Label] -> (Code, Strings, [Label])
-stringLabels ss ls = (code, strings, labels) where
+stringLabels :: [String] -> (Code, Strings)
+stringLabels ss = (code, strings) where
     stringLine (s, l) = StringDirective l s
     addStringToMap m (s, l) = Map.insert s l m
     initMap = Map.empty
-    stringsAndLabels = zip ss ls
+    stringsAndLabels = zip ss labels
     code = map stringLine stringsAndLabels
     strings = foldl addStringToMap initMap stringsAndLabels
-    labels = drop (length ss) ls
-
--- Generate assembly code to give each global variable an address in the data
--- section with the appropriate amount of data allocated, and keep track of these
--- addresses and the identifiers they correspond to.
-dataSection :: Program -> [Label] -> (Code, Scope, [Label])
-dataSection = undefined
-
-globalVariables :: Program -> [Declaration]
-globalVariables (Program ds) = filter isVarDec ds where
-    isVarDec (VarDec _ _) = True
-    isVarDec (FunDec _ _ _ _) = False
-
-functions :: Program -> [Declaration]
-functions (Program ds) = filter isFunDec ds where
-    isFunDec (FunDec _ _ _ _) = True
-    isFunDec (VarDec _ _) = False
+    labels = labelStream "S"
 
 -- Find all string literals contained in a Program
 extractStringLiterals :: Program -> [String]
-extractStringLiterals p = concatMap extractFromFunDec $ functions p where
-    extractFromFunDec (FunDec _ _ _ c) = setNub $ extractFromCompoundStmt c
+extractStringLiterals p = concatMap extractFromFunction $ extractFunctions p where
+    extractFromFunction (_, _, _, c) = setNub $ extractFromCompoundStmt c
     extractFromCompoundStmt (CompoundStmt _ ss) = concatMap extractFromStatement ss
     extractFromStatement (ExpressionStmt e) = extractFromExpression e
     extractFromStatement (CompoundStmtStmt c) = extractFromCompoundStmt c
@@ -102,10 +86,57 @@ extractStringLiterals p = concatMap extractFromFunDec $ functions p where
     extractFromFactor (StringFactor s _) = [s]
     extractFromFactor _ = []
 
+-- Generate assembly code to give each global variable an address in the data
+-- section with the appropriate amount of data allocated, and keep track of these
+-- addresses and the identifiers they correspond to.
+dataSection :: Program -> (Code, Scope)
+dataSection p = result where
+    globals = extractGlobalVariables p
+    isArray (_, (_, ArrayVar _)) = True
+    isArray _  = False
+    (arrays, vars) = partition isArray globals
+    (arrayCode, arrayScope) = arraySection arrays Map.empty
+    (varCode, fullScope) = varSection vars arrayScope
+    result = ([DataDirective] ++ arrayCode ++ varCode, fullScope)
+
+extractGlobalVariables :: Program -> [Variable]
+extractGlobalVariables (Program ds) = map extractVariable $ filter isVarDec ds where
+    isVarDec (VarDec _ _) = True
+    isVarDec (FunDec _ _ _ _) = False
+    extractVariable (VarDec i t) = (i, t)
+
+arraySection :: [Variable] -> Scope -> (Code, Scope)
+arraySection vs s = (code, scope) where
+    arrayLine ((_, (_, ArrayVar n)), l) = CommDirective l (n * 8) 8
+    addArrayToScope s' ((i, _), l) = Map.insert i (GlobalVariable l) s'
+    arraysAndLabels = zip vs labels
+    code = map arrayLine arraysAndLabels
+    scope = foldl addArrayToScope s arraysAndLabels
+    labels = labelStream "A"
+
+varSection :: [Variable] -> Scope -> (Code, Scope)
+varSection vs s = (code, scope) where
+    varLine (_, l) = CommDirective l 8 8
+    addVarToScope s' ((i, _), l) = Map.insert i (GlobalVariable l) s'
+    varsAndLabels = zip vs labels
+    code = map varLine varsAndLabels
+    scope = foldl addVarToScope s varsAndLabels
+    labels = labelStream "V"
+
+textSection :: Program -> Scope -> Strings -> Code
+textSection _ _ _ = result where
+    result = [TextDirective, GlobalDirective "main"]
+
+extractFunctions :: Program -> [Function]
+extractFunctions (Program ds) = map extractFunction $ filter isFunDec ds where
+    isFunDec (FunDec _ _ _ _) = True
+    isFunDec (VarDec _ _) = False
+    extractFunction (FunDec i r p c) = (i, r, p, c)
+
 --------------------------------------------------------------------------------
 
-processProgram :: Program -> Code
-processProgram (Program ds) = undefined
+processProgram :: Program -> Scope -> Strings -> Code
+processProgram (Program ds) scope strings = undefined
 
 processDeclaration :: Declaration -> Code
 processDeclaration (VarDec i (r, m)) = undefined
