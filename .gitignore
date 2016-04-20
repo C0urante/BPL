@@ -5,7 +5,9 @@ assembly
 Token
 Scanner
 Grammar
-Parse
+Parser
+Compiler
 ScannerTest
 ParserTest
 AnalyzerTest
+bpl
