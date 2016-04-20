@@ -40,4 +40,7 @@ simple:
 	rm -f *.o *.hi
 
 clean: simple
-	rm -f Token Scanner ScannerTest Grammar Parser ParserTest Environment Analyzer AnalyzerTest Compiler bpl
+	rm -f Token Scanner ScannerTest
+	rm -f Grammar Parser ParserTest
+	rm -f Types Analyzer AnalyzerTest
+	rm -f Compiler bpl
