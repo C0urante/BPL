@@ -21,7 +21,7 @@ import Types
 import Debug.Trace (trace)
 
 debugging :: Bool
-debugging = True
+debugging = False
 
 debug :: String -> b -> b
 debug info result
