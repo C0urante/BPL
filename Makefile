@@ -1,7 +1,13 @@
 HC=ghc
 HCFLAGS=-O2
 
-all: ScannerTest ParserTest AnalyzerTest
+all: bpl
+
+bpl: bpl.hs
+	$(HC) bpl.hs $(HCFLAGS)
+
+Compiler: Compiler.hs
+	$(HC) Compiler.hs $(HCFLAGS)
 
 AnalyzerTest: AnalyzerTest.hs
 	$(HC) AnalyzerTest.hs $(HCFLAGS)
@@ -34,4 +40,4 @@ simple:
 	rm -f *.o *.hi
 
 clean: simple
-	rm -f Token Scanner ScannerTest Grammar Parser ParserTest Environment Analyzer AnalyzerTest
+	rm -f Token Scanner ScannerTest Grammar Parser ParserTest Environment Analyzer AnalyzerTest Compiler bpl
