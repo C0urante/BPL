@@ -8,11 +8,12 @@ import Instruction
 
 type Variable = (Identifier, VarType)
 type Function = (Identifier, FunReturnType, [(Identifier, VarType)], CompoundStmt)
+type FrameSize = Int
 
 --  Integers correspond to frame offsets for locals, and Labels for the actual
 -- assembly label used for globals and functions
 data ScopeValue =
-    LocalVariable Integer |
+    LocalVariable Int |
     GlobalVariable Label |
     Function Label
 type Scope = Map.Map Identifier ScopeValue
@@ -124,8 +125,11 @@ varSection vs s = (code, scope) where
     labels = labelStream "V"
 
 textSection :: Program -> Scope -> Strings -> Code
-textSection _ _ _ = result where
+textSection p scope strings = result where
     result = [TextDirective, GlobalDirective "main"]
+    newScope = undefined
+    -- Have to add Global variables corresponding to each function
+    functions = extractFunctions p
 
 extractFunctions :: Program -> [Function]
 extractFunctions (Program ds) = map extractFunction $ filter isFunDec ds where
@@ -135,60 +139,162 @@ extractFunctions (Program ds) = map extractFunction $ filter isFunDec ds where
 
 --------------------------------------------------------------------------------
 
-processProgram :: Program -> Scope -> Strings -> Code
-processProgram (Program ds) scope strings = undefined
+--  Before the call the caller pushes the arguments onto the stack in reverse order (last argument first, first
+-- argument last) then pushes the fp onto the stack and makes the call.
+--  At the start of the call the callee puts the current stack pointer, which points at the return address, into
+-- the frame pointer. The callee then decrements the stack pointer by 8 times the number of local variables,
+-- to allocate room for all of the local variables.
+--  At the return the callee puts into eax or rax any return value, then pops off the stack any temporary data
+-- saved there, then increments the stack pointer to de-allocate the local variables. The callee then executes
+-- a ret .
+--  The return instruction pops the return address off the stack.
+--  At the return the caller pops the stack into the fp, restoring fp into what it was before the call. The
+-- caller then increments the stack by enough to pop the arguments that were pushed there. Any return value
+-- will be found in eax or rax.
+processFunction :: Function -> Scope -> Strings -> Code
+processFunction (i, t, p, c) scope strings = undefined where
+    labels = labelStream i
+    newScope = undefined
+    --  Need to add the location of each argument relative to the frame pointer
+    -- to the scope.
 
-processDeclaration :: Declaration -> Code
-processDeclaration (VarDec i (r, m)) = undefined
-processDeclaration (FunDec i r ps c) = undefined
+processCompoundStmt :: CompoundStmt -> Scope -> Strings -> FrameSize -> [Label] -> (Code, [Label])
+processCompoundStmt (CompoundStmt ld ss) scope strings frameSize labels = undefined where
+    (newScope, newFrameSize, stackDecrementCode) = processLocalDecs ld scope frameSize
 
-processCompoundStmt :: CompoundStmt -> Code
-processCompoundStmt (CompoundStmt ld ss) = undefined
+--  Return the new scope and frame size after making room for each new variable,
+-- as well as code used to decrement the stack pointer.
+processLocalDecs :: LocalDecs -> Scope -> FrameSize -> (Scope, FrameSize, Code)
+processLocalDecs (LocalDecs []) scope frameSize = (scope, frameSize, []) -- If there are no local decs, don't bother.
+processLocalDecs (LocalDecs ivs) scope frameSize = (newScope, newFrameSize, code) where
+    isArray (_, (_, ArrayVar _)) = True
+    isArray _  = False
+    (arrays, vars) = partition isArray ivs
+    (arrayScope, arraySpace) = processArrayDecs arrays scope frameSize
+    (newScope, varSpace) = processVarDecs vars arrayScope (frameSize + arraySpace)
+    newFrameSpace = arraySpace + varSpace
+    newFrameSize = frameSize + arraySpace + varSpace
+    code = [SubInstruction (SourceImmediate newFrameSpace) (DestinationRegister StackPointer)]
 
-processLocalDecs :: LocalDecs -> Code
-processLocalDecs (LocalDecs ivs) = undefined
+processArrayDecs :: [Variable] -> Scope -> FrameSize -> (Scope, Int)
+processArrayDecs ivs scope frameSize = (newScope, frameSpace) where
+    addArray (s, f) (i, (_, ArrayVar n)) = (Map.insert i (LocalVariable (-f)) s, f + (8 * n))
+    (newScope, frameSpace) = foldl addArray (scope, frameSize) ivs
 
-processStatement :: Statement -> Code
-processStatement (ExpressionStmt e) = undefined
-processStatement (EmptyExpressionStmt) = undefined
-processStatement (CompoundStmtStmt c) = undefined
-processStatement (IfStmt e s) = undefined
-processStatement (IfElseStmt e s s') = undefined
-processStatement (WhileStmt e s) = undefined
-processStatement (ReturnStmt e) = undefined
-processStatement (EmptyReturnStmt) = undefined
-processStatement (WriteStmt e) = undefined
-processStatement (WritelnStmt) = undefined
+processVarDecs :: [Variable] -> Scope -> FrameSize -> (Scope, Int)
+processVarDecs ivs scope frameSize = (newScope, frameSpace) where
+    addVar (s, f) (i, _) = (Map.insert i (LocalVariable (-f)) s, f - 8)
+    (newScope, frameSpace) = foldl addVar (scope, frameSize) ivs
+
+processStatement :: Statement -> Scope -> Strings -> FrameSize -> [Label] -> (Code, [Label])
+processStatement (ExpressionStmt e) scope strings _ labels = (code, labels) where
+    code = processExpression e scope strings
+processStatement EmptyExpressionStmt _ _ _ labels = ([], labels)
+processStatement (CompoundStmtStmt c) scope strings frameSize labels = recursion where
+    recursion = processCompoundStmt c scope strings frameSize labels
+processStatement (IfStmt e s) scope strings frame labelsSize = undefined
+processStatement (IfElseStmt e s s') scope strings frameSize labels = undefined
+processStatement (WhileStmt e s) scope strings frameSize labels = undefined
+processStatement (ReturnStmt e) scope strings _ labels = (code, labels) where
+    code = expressionCode ++ returnCode
+    expressionCode = processExpression e scope strings
+    returnCode = [ReturnInstruction]
+processStatement EmptyReturnStmt _ _ _ labels = (code, labels) where
+    code = [ReturnInstruction]
+processStatement (WriteStmt e) scope strings _ labels = (code, labels) where
+    code = expressionCode ++ [loadFirstArgument, loadFormatString, clearAccumulator, callFunction]
+    expressionCode = processExpression e scope strings
+    formatString = case nodeType e of
+        (IntNode, RawNode) -> ".integerWrite"
+        (StringNode, RawNode) -> ".stringWrite"
+        (VoidNode, _) -> error "Void expression encountered as argument to write statement. This should never happen."
+        (_, PointerNode) -> error "Pointer expression encountered as argument to write statement. This should never happen."
+        (_, ArrayNode) -> error "Array expression encountered as argument to write statement. This should never happen."
+    -- move eax into esi
+    loadFirstArgument = MoveHalfInstruction (SourceHalfRegister AccumulatorHalf) (DestinationHalfRegister TempTwoHalf)
+    -- move $.WriteIntString into rdi
+    loadFormatString = MoveInstruction (SourceLabel formatString) (DestinationRegister TempOne)
+    -- move 0 in eax.
+    clearAccumulator = ClearInstruction (DestinationRegister Accumulator)
+    -- call printf
+    callFunction = CallInstruction "printf"
+processStatement WritelnStmt _ _ _ labels = (code, labels) where
+    code = [loadFormatString, clearAccumulator, callFunction]
+    loadFormatString = MoveInstruction (SourceLabel ".newLineWrite") (DestinationRegister TempOne)
+    -- Just move $WritelnString into rdi,
+    clearAccumulator = ClearInstruction (DestinationRegister Accumulator)
+    -- move 0 into eax
+    callFunction = CallInstruction "printf"
+    -- and call printf
 
 --------------------------------------------------------------------------------
 
-processExpression :: Expression -> Code
-processExpression = undefined
+processExpression :: Expression -> Scope -> Strings -> Code
+processExpression (SimpleExpression compExp _) scope strings = processCompExp compExp scope strings
+processExpression (AssignmentExpression i m e _) scope strings = undefined where
+    expressionCode = processExpression e scope strings
+    leftLookup = scope Map.! i
 
-processCompExp :: CompExp -> Code
-processCompExp (CompExp e r e' n) = undefined
-processCompExp (SimpleExp e n) = undefined
+processCompExp :: CompExp -> Scope -> Strings -> Code
+processCompExp (CompExp e r e' _) scope strings = result where
+    leftECode = processE e scope strings
+    pushLeftECode = [PushInstruction (SourceRegister Accumulator)]
+    rightECode = processE e' scope strings
+    popLeftECode = [PopInstruction (DestinationRegister TempOne)]
+    comparison = [CompareHalfInstruction (SourceHalfRegister TempOneHalf) (DestinationHalfRegister AccumulatorHalf)]
+    setInstruction = case r of
+        LessThanRelOp -> SetLessInstruction
+        LessThanOrEqualRelOp -> SetLessEqualInstruction
+        EqualRelOp -> SetEqualInstruction
+        NotEqualRelOp -> SetNotEqualInstruction
+        GreaterThanOrEqualRelOp -> SetGreaterEqualInstruction
+        GreaterThanRelOp -> SetGreaterInstruction
+    setCode = [setInstruction (DestinationHalfRegister AccumulatorHalf)]
+    result = leftECode ++ pushLeftECode ++ rightECode ++ popLeftECode ++ comparison ++ setCode
+processCompExp (SimpleExp e _) scope strings = processE e scope strings
 
-processE :: E -> Code
-processE (AddE e a t n) = undefined
-processE (SimpleE t n) = undefined
+processE :: E -> Scope -> Strings -> Code
+processE (AddE e a t _) scope strings = result where
+    tCode = processT t scope strings
+    pushTCode = [PushInstruction (SourceRegister Accumulator)]
+    eCode = processE e scope strings
+    popTCode = [PopInstruction (DestinationRegister TempOne)]
+    operation = case a of
+        PlusAddOp -> AddHalfInstruction (SourceHalfRegister TempOneHalf) (DestinationHalfRegister AccumulatorHalf)
+        MinusAddOp -> SubHalfInstruction (SourceHalfRegister TempOneHalf) (DestinationHalfRegister AccumulatorHalf)
+    result = tCode ++ pushTCode ++ eCode ++ popTCode ++ [operation]
+processE (SimpleE t _) scope strings = processT t scope strings
 
-processT :: T -> Code
-processT (MulT t m f n) = undefined
-processT (SimpleT f n) = undefined
+processT :: T -> Scope -> Strings -> Code
+processT (MulT t m f _) scope strings = result where
+    fCode = processF f scope strings
+    pushFCode = [PushInstruction (SourceRegister Accumulator)]
+    tCode = processT t scope strings
+    popFCode = [PopInstruction (DestinationRegister TempOne)]
+    operation = case m of
+        TimesMulOp -> MulInstruction (SourceHalfRegister TempOneHalf) (DestinationRegister Accumulator)
+        DivMulOp -> DivInstruction (SourceHalfRegister TempOneHalf) (SourceHalfRegister AccumulatorHalf) (DestinationHalfRegister AccumulatorHalf)
+        ModMulOp -> ModInstruction (SourceHalfRegister TempOneHalf) (SourceHalfRegister AccumulatorHalf) (DestinationHalfRegister AccumulatorHalf)
+    result = fCode ++ pushFCode ++ tCode ++ popFCode ++ [operation]
+processT (SimpleT f _) scope strings = processF f scope strings
 
-processF :: F -> Code
-processF (NegativeF f n) = undefined
-processF (ReferenceF factor n) = undefined
-processF (DereferenceF factor n) = undefined
-processF (SimpleF factor n) = undefined
+processF :: F -> Scope -> Strings -> Code
+processF (NegativeF f _) scope strings = fCode ++ [negateResult] where
+    fCode = processF f scope strings
+    negateResult = NegateHalfInstruction (DestinationHalfRegister AccumulatorHalf)
+processF (ReferenceF factor _) scope strings = undefined
+    -- WTF?!?!?!?!?! Doesn't this allow F nodes like &5?!?!?!?!?!?!
+processF (DereferenceF factor _) scope strings = factorCode ++ [moveResult] where
+    factorCode = processFactor factor scope strings
+    moveResult = MoveInstruction (SourceOffset (Offset Accumulator 0)) (DestinationRegister Accumulator)
+processF (SimpleF factor _) scope strings = processFactor factor scope strings
 
 -- Take in a Factor, output Assembly Code that places the result of computing said
 -- Factor into the accumulator register.
-processFactor :: Factor -> Code
-processFactor (GroupedFactor e _) = processExpression e
-processFactor (FunCallFactor f _) = undefined
-processFactor (ReadFactor _) = result where
+processFactor :: Factor -> Scope -> Strings -> Code
+processFactor (GroupedFactor e _) scope strings = processExpression e scope strings
+processFactor (FunCallFactor f _) scope strings = processFunCall f scope strings
+processFactor (ReadFactor _) _ _ = result where
     result = [decrementStack, loadCallAddress, loadReadString, callScanf, moveResult, incrementStack]
     decrementStack = SubInstruction (SourceImmediate 40) (DestinationRegister StackPointer)
     --  Decrement the stack pointer by 40 bytes.
@@ -202,29 +308,46 @@ processFactor (ReadFactor _) = result where
     --  Move 24(%rsp) into Accumulator.
     incrementStack = AddInstruction (SourceImmediate 40) (DestinationRegister StackPointer)
     --  Increment the stack pointer by 40 bytes
-processFactor (DereferenceFactor i _) = undefined where
-    result = LoadAddressInstruction address (DestinationRegister Accumulator)
-    varLookup = undefined
+processFactor (DereferenceFactor i _) scope _ = [address, moveResult] where
+    varLookup = scope Map.! i
     -- <varLookup> should contain the value of <i> in the current scope
-    address = undefined
-    -- <address> should handle cases of varLookup being either local (offset from frame) or global (raw addess)
-processFactor (VarFactor i _) = undefined
-processFactor (ArrayReferenceFactor i e _) = result where
+    address = case varLookup of
+        (LocalVariable o) -> MoveInstruction (SourceOffset (Offset TempOne o)) (DestinationRegister Accumulator)
+        (GlobalVariable l) -> MoveInstruction (SourceLabel l) (DestinationRegister Accumulator)
+        _ -> error "A function call has been encountered as a variable in the code generation phase. This should never happen."
+    --  <address> should handle cases of varLookup being either local (offset from frame)
+    -- or global (raw addess), and load the value of either into the accumulator
+    moveResult = MoveInstruction (SourceOffset (Offset Accumulator 0)) (DestinationRegister Accumulator)
+    -- <result> moves the memory location referenced by the accumulator into the accumulator itself
+processFactor (VarFactor i _) scope _ = [result] where
+    varLookup = scope Map.! i
+    result = case varLookup of
+        (LocalVariable o) -> MoveInstruction (SourceOffset (Offset TempOne o)) (DestinationRegister Accumulator)
+        (GlobalVariable l) -> MoveInstruction (SourceLabel l) (DestinationRegister Accumulator)
+        _ -> error "A function call has been encountered as a variable in the code generation phase. This should never happen."
+processFactor (ArrayReferenceFactor i e _) scope strings = result where
     result = indexValue ++ [base, address, moveResult]
-    indexValue = processExpression e
+    indexValue = processExpression e scope strings
     -- indexValue moves the evaluated value of <e> into the accumulator register
-    base = undefined
+    baseLookup = scope Map.! i
+    base = case baseLookup of
+        (LocalVariable o) -> AddInstruction (SourceOffset (Offset SaveOne o)) (DestinationRegister TempOne)
+        (GlobalVariable l) -> MoveInstruction (SourceLabel l) (DestinationRegister TempOne)
+        _ -> error "A function call has been encountered as a variable in the code generation phase. This should never happen."
     -- <base> should move the base address of the array referenced by <i> into temporary register one
     address = AddInstruction (SourceRegister TempOne) (DestinationRegister Accumulator)
-    moveResult = LoadAddressInstruction (SourceRegister Accumulator) (DestinationRegister Accumulator)
-processFactor (NumberFactor n _) = [result] where
+    -- <address> should move the actual address of the array element into the accumulator
+    moveResult = MoveInstruction (SourceOffset (Offset Accumulator 0)) (DestinationRegister Accumulator)
+    -- <moveResult> loads the memory location referenced by the accumulator into the accumulator itself
+processFactor (NumberFactor n _) _ _ = [result] where
     result = MoveInstruction (SourceImmediate n) (DestinationRegister Accumulator)
-processFactor (StringFactor s _) = [result] where
+processFactor (StringFactor s _) _ strings = [result] where
     result = MoveInstruction (SourceLabel label) (DestinationRegister Accumulator)
-    label = undefined
-    -- <label> should be the label corresponding to the string literal <s>
+    label = strings Map.! s
 
-processFunCall :: FunCall -> Code
+--  Before the call the caller pushes the arguments onto the stack in reverse order (last argument first, first
+-- argument last) then pushes the fp onto the stack and makes the call.
+processFunCall :: FunCall -> Scope -> Strings -> Code
 processFunCall (FunCall i es n) = undefined
 
 --------------------------------------------------------------------------------
