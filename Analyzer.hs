@@ -208,8 +208,9 @@ processExpression s (Grammar.SimpleExpression c line) =
 
 processCompExp :: Scope -> Grammar.CompExp -> CompExp
 processCompExp s (Grammar.CompExp e r e' line) =
-    CompExp e'' r e''' loggedNode where
+    CompExp e'' r' e''' loggedNode where
         e'' = processE s e
+        r' = processRelOp r
         e''' = processE s e'
         rawInt = (IntNode, RawNode)
         verifiedNode = if nodeType e'' == rawInt && nodeType e''' == rawInt
@@ -225,8 +226,9 @@ processCompExp s (Grammar.SimpleExp e line) =
 
 processE :: Scope -> Grammar.E -> E
 processE s (Grammar.AddE e a t line) =
-    AddE e' a t' loggedNode where
+    AddE e' a' t' loggedNode where
         e' = processE s e
+        a' = processAddOp a
         t' = processT s t
         rawInt = (IntNode, RawNode)
         verifiedNode = if nodeType e' == rawInt && nodeType t' == rawInt
@@ -242,8 +244,9 @@ processE s (Grammar.SimpleE t line) =
 
 processT :: Scope -> Grammar.T -> T
 processT s (Grammar.MulT t m f line) =
-    MulT t' m f' loggedNode where
+    MulT t' m' f' loggedNode where
         t' = processT s t
+        m' = processMulOp m
         f' = processF s f
         rawInt = (IntNode, RawNode)
         verifiedNode = if nodeType t' == rawInt && nodeType f' == rawInt
@@ -477,3 +480,20 @@ extractParamMetaType :: Grammar.ParamMetaType -> VarMetaType
 extractParamMetaType Grammar.RawParam = RawVar
 extractParamMetaType Grammar.PointerParam = PointerVar
 extractParamMetaType Grammar.ArrayParam = ArrayVar 0
+
+processRelOp :: Grammar.RelOp -> RelOp
+processRelOp (Grammar.LessThanOrEqualRelOp _) = LessThanOrEqualRelOp
+processRelOp (Grammar.LessThanRelOp _) = LessThanRelOp
+processRelOp (Grammar.EqualRelOp _) = EqualRelOp
+processRelOp (Grammar.NotEqualRelOp _) = NotEqualRelOp
+processRelOp (Grammar.GreaterThanRelOp _) = GreaterThanRelOp
+processRelOp (Grammar.GreaterThanOrEqualRelOp _) = GreaterThanOrEqualRelOp
+
+processAddOp :: Grammar.AddOp -> AddOp
+processAddOp (Grammar.PlusAddOp _) = PlusAddOp
+processAddOp (Grammar.MinusAddOp _) = MinusAddOp
+
+processMulOp :: Grammar.MulOp -> MulOp
+processMulOp (Grammar.TimesMulOp _) = TimesMulOp
+processMulOp (Grammar.DivMulOp _) = DivMulOp
+processMulOp (Grammar.ModMulOp _) = ModMulOp

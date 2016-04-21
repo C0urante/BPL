@@ -1,7 +1,6 @@
 module Types where
 
 import qualified Data.Map as Map
-import Grammar (RelOp, AddOp, MulOp)
 
 type LineNumber = Int
 
@@ -182,6 +181,15 @@ data CompExp =
     SimpleExp E NodeType
     deriving (Eq, Show)
 
+data RelOp =
+    LessThanOrEqualRelOp |
+    LessThanRelOp |
+    EqualRelOp |
+    NotEqualRelOp |
+    GreaterThanRelOp |
+    GreaterThanOrEqualRelOp
+    deriving (Eq, Show)
+
 instance TypedNode CompExp where
     nodeType (CompExp _ _ _ n) = n
     nodeType (SimpleExp _ n) = n
@@ -191,6 +199,11 @@ data E =
     SimpleE T NodeType
     deriving (Eq, Show)
 
+data AddOp =
+    PlusAddOp |
+    MinusAddOp
+    deriving (Eq, Show)
+
 instance TypedNode E where
     nodeType (AddE _ _ _ n) = n
     nodeType (SimpleE _ n) = n
@@ -198,6 +211,12 @@ instance TypedNode E where
 data T =
     MulT T MulOp F NodeType |
     SimpleT F NodeType
+    deriving (Eq, Show)
+
+data MulOp =
+    TimesMulOp |
+    DivMulOp |
+    ModMulOp
     deriving (Eq, Show)
 
 instance TypedNode T where
