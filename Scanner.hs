@@ -67,7 +67,8 @@ tokenizer :: String -> [Token] -> Int -> [Token]
 tokenizer "" acc line = Token T_END_OF_FILE "(EOF)" line:acc
 tokenizer ('\n':source) acc line = tokenizer source acc (line + 1)
 tokenizer ('"':source) acc line = parseString source acc line
-tokenizer ('/':'*':source) acc line = skipComment source acc line
+tokenizer ('/':'*':source) acc line = skipBlockComment source acc line
+tokenizer ('/':'/':source) acc line = skipLineComment source acc line
 tokenizer (c1:c2:source) acc line
     | isSpace c1 =
         tokenizer (c2:source) acc line
@@ -97,12 +98,17 @@ badCharacter :: Char -> Int -> [Token]
 badCharacter c line =
     error $ "Unrecognized character at line " ++ show line ++": '" ++ (c:"'")
 
-skipComment :: String -> [Token] -> Int -> [Token]
-skipComment ('*':'/':source) acc line = tokenizer source acc line
-skipComment ('\n':source) acc line = skipComment source acc (line + 1)
-skipComment (_:source) acc line = skipComment source acc line
-skipComment "" _ _ =
+skipBlockComment :: String -> [Token] -> Int -> [Token]
+skipBlockComment ('*':'/':source) acc line = tokenizer source acc line
+skipBlockComment ('\n':source) acc line = skipBlockComment source acc (line + 1)
+skipBlockComment (_:source) acc line = skipBlockComment source acc line
+skipBlockComment "" _ _ =
     error $ "Unterminated comment encountered, " ++ "end of file reached."
+
+skipLineComment :: String -> [Token] -> Int -> [Token]
+skipLineComment ('\n':source) acc line = tokenizer source acc (line + 1)
+skipLineComment (_:source) acc line = skipLineComment source acc line
+skipLineComment "" acc line = tokenizer "" acc line
 
 symbolToken :: String -> Int -> Token
 symbolToken value = Token (fromJust $ Map.lookup value symbols) value
