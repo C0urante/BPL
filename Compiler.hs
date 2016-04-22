@@ -310,15 +310,11 @@ processDereferenceAssignment expressionCode leftLookup = result where
     result = commentOne ++ expressionCode ++ commentTwo ++ assignmentCode ++ commentThree
     commentOne = [Comment "Evaluating expression on right side of dereference assignment"]
     commentTwo = [Comment "Moving evaluated expression to left side of dereference assignment"]
-    assignmentCode = [loadAddressCode, writeAddressCode]
-    loadAddressCode = case leftLookup of
+    addressCode = case leftLookup of
         LocalVariable o -> MoveInstruction (frameSource o) (DestinationRegister TempOne)
         GlobalVariable l -> MoveInstruction (SourceLabel l) (DestinationRegister TempOne)
         Function _ -> error "Function encountered as lvalue. This should never happen."
-    -- <loadAddressCode> moves the value of the lvalue into TempOne
-    writeAddressCode = MoveInstruction (SourceRegister Accumulator) (DestinationOffset (Offset TempOne 0))
-    -- <writeAddressCode> moves the value in the accumulator into the memory value held in TempOne
-    -- The accumulator already holds the value of the assignment, so no need to alter it
+    assignmentCode = addressCode:[MoveInstruction (SourceRegister Accumulator) (DestinationOffset (Offset TempOne 0))]
     commentThree = [Comment "Dereference assignment completed"]
 
 processArrayAssignment :: Code -> Code -> ScopeValue -> Code
@@ -390,8 +386,27 @@ processF :: F -> Scope -> Strings -> Code
 processF (NegativeF f _) scope strings = fCode ++ [negateResult] where
     fCode = processF f scope strings
     negateResult = NegateHalfInstruction (DestinationHalfRegister AccumulatorHalf)
-processF (ReferenceF factor _) scope strings = undefined
-    -- WTF?!?!?!?!?! Doesn't this allow F nodes like &5?!?!?!?!?!?!
+processF (ReferenceF (RawLValue i _) _) scope _ = result where
+    varLookup = scope Map.! i
+    source = case varLookup of
+        (LocalVariable o) -> frameSource o
+        (GlobalVariable l) -> SourceLabel l
+        (Function _) -> error "Function encountered as lvalue. This should never happen."
+    result = [LoadAddressInstruction source (DestinationRegister Accumulator)]
+processF (ReferenceF (ArrayLValue i e _) _) scope strings = result where
+    result = expressionCode ++ [loadIndex, calculateOffset, calculateAddress]
+    expressionCode = processExpression e scope strings
+    -- <expressionCode> calculates the array index value and puts it into the accumulator
+    varLookup = scope Map.! i
+    source = case varLookup of
+        (LocalVariable o) -> frameSource o
+        (GlobalVariable l) -> SourceLabel l
+        (Function _) -> error "Function encountered as lvalue. This should never happen."
+    loadIndex = LoadAddressInstruction source (DestinationRegister TempOne)
+    -- <loadIndex> moves the address of the base of the array into TempOne
+    calculateOffset = ShiftLeftInstruction (SourceImmediate 3) (DestinationRegister Accumulator)
+    calculateAddress = AddInstruction (SourceRegister TempOne) (DestinationRegister Accumulator)
+    -- <moveAddress>
 processF (DereferenceF factor _) scope strings = factorCode ++ [moveResult] where
     factorCode = processFactor factor scope strings
     moveResult = MoveInstruction (SourceOffset (Offset Accumulator 0)) (DestinationRegister Accumulator)
@@ -418,17 +433,14 @@ processFactor (ReadFactor _) _ _ = result where
     incrementStack = AddInstruction (SourceImmediate 40) (DestinationRegister StackPointer)
     --  Increment the stack pointer by 40 bytes
     commentTwo = Comment "Ending call to read()"
-processFactor (DereferenceFactor i _) scope _ = [address, moveResult] where
+processFactor (DereferenceFactor i _) scope _ = [result] where
     varLookup = scope Map.! i
     -- <varLookup> should contain the value of <i> in the current scope
-    address = case varLookup of
-        (LocalVariable o) -> MoveInstruction (frameSource o) (DestinationRegister Accumulator)
-        (GlobalVariable l) -> MoveInstruction (SourceLabel l) (DestinationRegister Accumulator)
+    source = case varLookup of
+        (LocalVariable o) -> frameSource o
+        (GlobalVariable l) ->  SourceLabel l
         _ -> error "A function call has been encountered as a variable in the code generation phase. This should never happen."
-    --  <address> should handle cases of varLookup being either local (offset from frame)
-    -- or global (raw addess), and load the value of either into the accumulator
-    moveResult = MoveInstruction (SourceOffset (Offset Accumulator 0)) (DestinationRegister Accumulator)
-    -- <result> moves the memory location referenced by the accumulator into the accumulator itself
+    result = MoveInstruction source (DestinationRegister Accumulator)
 processFactor (VarFactor i _) scope _ = [result] where
     varLookup = scope Map.! i
     result = case varLookup of
