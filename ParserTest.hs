@@ -8,7 +8,7 @@ main :: IO ()
 main = do
     args <- getArgs
     if null args
-        then print "You must supply the name of a BPL file to tokenize."
+        then print "You must supply the name of a BPL file to parse."
     else
         do
             sourceCode <- readFile $ head args

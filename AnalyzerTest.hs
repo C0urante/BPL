@@ -9,7 +9,7 @@ main :: IO ()
 main = do
     args <- getArgs
     if null args
-        then putStrLn "You must supply the name of a BPL file to tokenize."
+        then putStrLn "You must supply the name of a BPL file to type check."
     else
         do
             sourceCode <- readFile $ head args
