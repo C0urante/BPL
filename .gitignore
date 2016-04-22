@@ -1,6 +1,7 @@
 *.bpl
 *.o
 *.hi
+*.s
 assembly
 Token
 Scanner
@@ -11,3 +12,4 @@ ScannerTest
 ParserTest
 AnalyzerTest
 bpl
+test/*
