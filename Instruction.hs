@@ -93,26 +93,30 @@ instance Show Source where
     show (SourceRegister r) =  show r
     show (SourceOffset o) =    show o
     show (SourceImmediate n) = "$" ++ show n
-    show (SourceLabel l) =     "$" ++ l
+    show (SourceLabel l) =     l
 instance Show SourceHalf where
     show (SourceHalfRegister r) =  show r
     show (SourceHalfOffset o) =    show o
     show (SourceHalfImmediate n) = "$" ++ show n
-    show (SourceHalfLabel l) =     "$" ++ l
+    show (SourceHalfLabel l) =     l
 
 data Destination = DestinationRegister Register
                  | DestinationOffset Offset
+                 | DestinationLabel Label
                    deriving (Eq)
 data DestinationHalf = DestinationHalfRegister RegisterHalf
                      | DestinationHalfOffset Offset
+                     | DestinationHalfLabel Label
                        deriving (Eq)
 
 instance Show Destination where
     show (DestinationRegister r) = show r
     show (DestinationOffset o) =   show o
+    show (DestinationLabel l) =    l
 instance Show DestinationHalf where
     show (DestinationHalfRegister r) = show r
     show (DestinationHalfOffset o) =   show o
+    show (DestinationHalfLabel l) =    l
 
 data AssemblyLine = DataDirective
                   | CommDirective Symbol Int Int
@@ -137,6 +141,8 @@ data AssemblyLine = DataDirective
                   | SetNotEqualInstruction DestinationHalf
                   | SetGreaterEqualInstruction DestinationHalf
                   | SetGreaterInstruction DestinationHalf
+                  | TestInstruction Source Destination
+                  | TestHalfInstruction SourceHalf DestinationHalf
                   | JumpLessInstruction Label
                   | JumpLessEqualInstruction Label
                   | JumpEqualInstruction Label
@@ -152,9 +158,11 @@ data AssemblyLine = DataDirective
                   | SubHalfInstruction SourceHalf DestinationHalf
                   | NegateInstruction Destination
                   | NegateHalfInstruction DestinationHalf
-                  | MulInstruction SourceHalf Destination
+                  | MulInstruction SourceHalf DestinationHalf
                   | DivInstruction SourceHalf SourceHalf DestinationHalf
                   | ModInstruction SourceHalf SourceHalf DestinationHalf
+                  | ShiftLeftInstruction Source Destination
+                  | Comment String
                     deriving (Eq)
 
 instance Show AssemblyLine where
@@ -171,8 +179,8 @@ instance Show AssemblyLine where
     show (ClearHalfInstruction d) =         "\tclrl\t" ++ show d
     show (LoadAddressInstruction s d) =     "\tleaq\t" ++ show s ++ ", " ++ show d
     show (PushInstruction s) =              "\tpush\t" ++ show s
-    show (PopInstruction d) =               "\tpop\t"  ++ show d
-    show (JumpInstruction l) =              "\tjump\t" ++ l
+    show (PopInstruction d) =               "\tpop \t" ++ show d
+    show (JumpInstruction l) =              "\tjmp \t" ++ l
     show (CompareInstruction s d) =         "\tcmpl\t" ++ show s ++ ", " ++ show d
     show (CompareHalfInstruction s d) =     "\tcmpl\t" ++ show s ++ ", " ++ show d
     show (SetLessInstruction d) =           showRelOpInstruction "l"  d
@@ -181,13 +189,15 @@ instance Show AssemblyLine where
     show (SetNotEqualInstruction d) =       showRelOpInstruction "ne" d
     show (SetGreaterEqualInstruction d) =   showRelOpInstruction "ge" d
     show (SetGreaterInstruction d) =        showRelOpInstruction "g"  d
-    show (JumpLessInstruction l) =          "\tjl\t"   ++ l
-    show (JumpLessEqualInstruction l) =     "\tjle\t"  ++ l
-    show (JumpEqualInstruction l) =         "\tje\t"   ++ l
-    show (JumpNotEqualInstruction l) =      "\tjne\t"  ++ l
-    show (JumpGreaterEqualInstruction l) =  "\tjge\t"  ++ l
-    show (JumpGreaterInstruction l) =       "\tjg\t"   ++ l
-    show (JumpZeroInstruction l) =          "\tjz\t"   ++ l
+    show (TestInstruction s d) =            "\ttestq\t" ++ show s ++ ", " ++ show d
+    show (TestHalfInstruction s d) =        "\ttestl\t" ++ show s ++ ", " ++ show d
+    show (JumpLessInstruction l) =          "\tjl  \t" ++ l
+    show (JumpLessEqualInstruction l) =     "\tjle \t" ++ l
+    show (JumpEqualInstruction l) =         "\tje  \t" ++ l
+    show (JumpNotEqualInstruction l) =      "\tjne \t" ++ l
+    show (JumpGreaterEqualInstruction l) =  "\tjge \t" ++ l
+    show (JumpGreaterInstruction l) =       "\tjg  \t" ++ l
+    show (JumpZeroInstruction l) =          "\tjz  \t" ++ l
     show (CallInstruction l) =              "\tcall\t" ++ l
     show ReturnInstruction =                "\tret"
     show (AddInstruction s d) =             "\taddq\t" ++ show s ++ ", " ++ show d
@@ -199,6 +209,8 @@ instance Show AssemblyLine where
     show (MulInstruction s d) =             "\timul\t" ++ show s ++ ", " ++ show d
     show (DivInstruction s s' d) =          showDivModInstruction s s' d Division
     show (ModInstruction s s' d) =          showDivModInstruction s s' d Modulus
+    show (ShiftLeftInstruction s d) =       "\tsalq\t" ++ show s ++ ", " ++ show d
+    show (Comment s) =                      "# " ++ s
 
 showRelOpInstruction :: String -> DestinationHalf -> String
 showRelOpInstruction op destination = setInstruction ++ expandInstruction where
@@ -213,8 +225,8 @@ showDivModInstruction dividend divisor destination op = result where
     moveDividend = "\tmovl\t" ++ show dividend ++ ", " ++ "%ebp\n"
     moveDivisor = "\tmovl\t" ++ show divisor  ++ ", " ++ "%eax\n"
     extendToQuad = "\tcltq\n"
-    extendToOctet = "\tclto\n"
-    divide = "\tidivl\t%ebp"
+    extendToOctet = "\tcqto\n"
+    divide = "\tidivl\t%ebp\n"
     resultRegister = case op of
         Division -> "%eax"
         Modulus -> "%edx"
