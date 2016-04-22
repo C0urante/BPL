@@ -11,9 +11,11 @@ type Function = (Identifier, FunReturnType, [(Identifier, VarType)], CompoundStm
 type FrameSize = Int
 
 --  Integers correspond to frame offsets for locals, and Labels for the actual
--- assembly label used for globals and functions
+-- assembly label used for globals and functions; array parameters have to be
+-- treated somewhat specially, since they are passed as pointers
 data ScopeValue =
     LocalVariable Int |
+    ArrayParameter Int |
     GlobalVariable Label |
     Function Label
 type Scope = Map.Map Identifier ScopeValue
@@ -163,10 +165,10 @@ processFunction scope strings (i, _, ps, c) = result where
     result = functionLabel ++ setFramePointerCode ++ bodyCode ++ returnCode
     functionLabel = [LabelDirective i]
     labels = labelStream $ i ++ "C"
-    (newScope, _) = foldl addArgToScope (scope, 8) argNames
-    argNames = map extractArgName ps
-    extractArgName (i', _) = i'
-    addArgToScope (s, f) i' = (Map.insert i' (LocalVariable f) s, f + 8)
+    (newScope, _) = foldl addArgToScope (scope, 8) ps
+    addArgToScope (s, f) (i', (_, m)) = case m of
+        (ArrayVar _) -> (Map.insert i' (ArrayParameter f) s, f + 8)
+        _ -> (Map.insert i' (LocalVariable f) s, f + 8)
     setFramePointerCode = [MoveInstruction (SourceRegister StackPointer) (DestinationRegister SaveOne)]
     (bodyCode, _) = processCompoundStmt c newScope strings 0 labels
     returnCode = [ReturnInstruction]
@@ -239,12 +241,15 @@ processStatement (WhileStmt e s) scope strings frameSize (loopLabel:breakLabel:l
     (bodyCode, remainingLabels) = processStatement s scope strings frameSize labels
     loopJump = [JumpInstruction loopLabel]
     breakLabelCode = [LabelDirective breakLabel]
-processStatement (ReturnStmt e) scope strings _ labels = (code, labels) where
-    code = expressionCode ++ returnCode
+processStatement (ReturnStmt e) scope strings frameSize labels = (code, labels) where
+    code = expressionCode ++ [stackIncrementInstruction, returnInstruction]
     expressionCode = processExpression e scope strings
-    returnCode = [ReturnInstruction]
-processStatement EmptyReturnStmt _ _ _ labels = (code, labels) where
-    code = [ReturnInstruction]
+    stackIncrementInstruction = AddInstruction (SourceImmediate frameSize) (DestinationRegister StackPointer)
+    returnInstruction = ReturnInstruction
+processStatement EmptyReturnStmt _ _ frameSize labels = (code, labels) where
+    code = [stackIncrementInstruction, returnInstruction]
+    stackIncrementInstruction = AddInstruction (SourceImmediate frameSize) (DestinationRegister StackPointer)
+    returnInstruction = ReturnInstruction
 processStatement (WriteStmt e) scope strings _ labels = (code, labels) where
     code = [commentOne] ++ expressionCode ++ [commentTwo, loadFirstArgument, loadFormatString, clearAccumulator, callFunction, commentThree]
     commentOne = Comment "Beginning call to write()"
@@ -289,9 +294,9 @@ processExpression (AssignmentExpression i m e _) scope strings = result where
     expressionCode = processExpression e scope strings
     leftLookup = scope Map.! i
     assignmentCode = case m of
-        RawAssignment -> processRawAssignment expressionCode leftLookup
-        DereferenceAssignment -> processDereferenceAssignment expressionCode leftLookup
-        ArrayAssignment index -> processArrayAssignment expressionCode (processExpression index scope strings) leftLookup
+        (RawAssignment) -> processRawAssignment expressionCode leftLookup
+        (DereferenceAssignment) -> processDereferenceAssignment expressionCode leftLookup
+        (ArrayAssignment index) -> processArrayAssignment expressionCode (processExpression index scope strings) leftLookup
 
 processRawAssignment :: Code -> ScopeValue -> Code
 processRawAssignment expressionCode leftLookup = result where
@@ -299,9 +304,12 @@ processRawAssignment expressionCode leftLookup = result where
     commentOne = [Comment "Evaluating expression on right side of raw assignment"]
     commentTwo = [Comment "Moving evaluated expression to left side of raw assignment"]
     destination = case leftLookup of
-        LocalVariable o -> frameDestination o
-        GlobalVariable l -> DestinationLabel l
-        Function _ -> error "Function encountered as lvalue. This should never happen."
+        (LocalVariable o) -> frameDestination o
+        (GlobalVariable l) -> DestinationLabel l
+        (ArrayParameter _) -> error
+            "An array has been encountered as an lvalue for a raw assignment in the code generation phase. This should never happen."
+        (Function _) -> error
+            "Function encountered as lvalue. This should never happen."
     assignmentCode = [MoveInstruction (SourceRegister Accumulator) destination]
     commentThree = [Comment "Raw assignment completed"]
 
@@ -311,9 +319,12 @@ processDereferenceAssignment expressionCode leftLookup = result where
     commentOne = [Comment "Evaluating expression on right side of dereference assignment"]
     commentTwo = [Comment "Moving evaluated expression to left side of dereference assignment"]
     addressCode = case leftLookup of
-        LocalVariable o -> MoveInstruction (frameSource o) (DestinationRegister TempOne)
-        GlobalVariable l -> MoveInstruction (SourceLabel l) (DestinationRegister TempOne)
-        Function _ -> error "Function encountered as lvalue. This should never happen."
+        (LocalVariable o) -> MoveInstruction (frameSource o) (DestinationRegister TempOne)
+        (GlobalVariable l) -> MoveInstruction (SourceLabel l) (DestinationRegister TempOne)
+        (ArrayParameter _) -> error
+            "An array has been encountered as an lvalue for a dereference assignment in the code generation phase. This should never happen."
+        (Function _) -> error
+            "Function encountered as lvalue. This should never happen."
     assignmentCode = addressCode:[MoveInstruction (SourceRegister Accumulator) (DestinationOffset (Offset TempOne 0))]
     commentThree = [Comment "Dereference assignment completed"]
 
@@ -325,9 +336,11 @@ processArrayAssignment expressionCode indexCode leftLookup = result where
     commentTwo = [Comment "Evaluating expression on right side of array assignment"]
     commentThree = [Comment "Moving evaluated expression to left side of array assignment"]
     loadBaseInstruction = case leftLookup of
-        LocalVariable o -> LoadAddressInstruction (frameSource o) (DestinationRegister TempOne)
-        GlobalVariable l -> LoadAddressInstruction (SourceLabel l) (DestinationRegister TempOne)
-        Function _ -> error "Function encountered as lvalue. This should never happen."
+        (LocalVariable o) -> LoadAddressInstruction (frameSource o) (DestinationRegister TempOne)
+        (GlobalVariable l) -> LoadAddressInstruction (SourceLabel l) (DestinationRegister TempOne)
+        (ArrayParameter o) -> MoveInstruction (frameSource o) (DestinationRegister TempOne)
+        (Function _) -> error
+            "Function encountered as lvalue. This should never happen."
     -- <loadBaseInstruction> moves the base address of the array into TempOne
     offsetInstruction = ShiftLeftInstruction (SourceImmediate 3) (DestinationRegister Accumulator)
     -- <offsetInstruction> multiplies the value of the index (in the accumulator) by eight (size of element)
@@ -391,7 +404,10 @@ processF (ReferenceF (RawLValue i _) _) scope _ = result where
     source = case varLookup of
         (LocalVariable o) -> frameSource o
         (GlobalVariable l) -> SourceLabel l
-        (Function _) -> error "Function encountered as lvalue. This should never happen."
+        (ArrayParameter _) -> error
+            "An array has been encountered as a reference f in the code generation phase. This should never happen."
+        (Function _) -> error
+            "Function encountered as lvalue. This should never happen."
     result = [LoadAddressInstruction source (DestinationRegister Accumulator)]
 processF (ReferenceF (ArrayLValue i e _) _) scope strings = result where
     result = expressionCode ++ [loadIndex, calculateOffset, calculateAddress]
@@ -401,7 +417,10 @@ processF (ReferenceF (ArrayLValue i e _) _) scope strings = result where
     source = case varLookup of
         (LocalVariable o) -> frameSource o
         (GlobalVariable l) -> SourceLabel l
-        (Function _) -> error "Function encountered as lvalue. This should never happen."
+        (ArrayParameter _) -> error
+            "An array has been encountered as a reference f in the code generation phase. This should never happen."
+        (Function _) -> error
+            "Function encountered as lvalue. This should never happen."
     loadIndex = LoadAddressInstruction source (DestinationRegister TempOne)
     -- <loadIndex> moves the address of the base of the array into TempOne
     calculateOffset = ShiftLeftInstruction (SourceImmediate 3) (DestinationRegister Accumulator)
@@ -439,14 +458,28 @@ processFactor (DereferenceFactor i _) scope _ = [result] where
     source = case varLookup of
         (LocalVariable o) -> frameSource o
         (GlobalVariable l) ->  SourceLabel l
-        _ -> error "A function call has been encountered as a variable in the code generation phase. This should never happen."
+        (ArrayParameter _) -> error
+            "An array has been encountered as a dereference factor in the code generation phase. This should never happen."
+        (Function _) -> error
+            "A function call has been encountered as a variable in the code generation phase. This should never happen."
     result = MoveInstruction source (DestinationRegister Accumulator)
+processFactor (VarFactor i (_, ArrayNode)) scope _ = [result] where
+    varLookup = scope Map.! i
+    result = case varLookup of
+        (LocalVariable o) -> LoadAddressInstruction (frameSource o) (DestinationRegister Accumulator)
+        (GlobalVariable l) -> MoveInstruction (SourceLabel l) (DestinationRegister Accumulator)
+        (ArrayParameter o) -> MoveInstruction (frameSource o) (DestinationRegister Accumulator)
+        (Function _) -> error
+            "A function call has been encountered as an array variable factor in the code generation phase. This should never happen."
 processFactor (VarFactor i _) scope _ = [result] where
     varLookup = scope Map.! i
     result = case varLookup of
         (LocalVariable o) -> MoveInstruction (frameSource o) (DestinationRegister Accumulator)
         (GlobalVariable l) -> MoveInstruction (SourceLabel l) (DestinationRegister Accumulator)
-        _ -> error "A function call has been encountered as a variable in the code generation phase. This should never happen."
+        (ArrayParameter _) -> error
+            "An array has been encountered as a non-array variable factor in the code generation phase. This should never happen."
+        (Function _) -> error
+            "A function call has been encountered as a variable in the code generation phase. This should never happen."
 processFactor (ArrayReferenceFactor i e _) scope strings = result where
     result = indexValue ++ [indexShift, base, address, moveResult]
     indexValue = processExpression e scope strings
@@ -457,7 +490,9 @@ processFactor (ArrayReferenceFactor i e _) scope strings = result where
     base = case baseLookup of
         (LocalVariable o) -> LoadAddressInstruction (frameSource o) (DestinationRegister TempOne)
         (GlobalVariable l) -> LoadAddressInstruction (SourceLabel l) (DestinationRegister TempOne)
-        _ -> error "A function call has been encountered as a variable in the code generation phase. This should never happen."
+        (ArrayParameter o) -> MoveInstruction (frameSource o) (DestinationRegister TempOne)
+        (Function _) -> error
+            "A function call has been encountered as a variable in the code generation phase. This should never happen."
     -- <base> should move the base address of the array referenced by <i> into temporary register one
     address = AddInstruction (SourceRegister TempOne) (DestinationRegister Accumulator)
     -- <address> should move the actual address of the array element into the accumulator
