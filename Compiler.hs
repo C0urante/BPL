@@ -45,7 +45,7 @@ readLabelCode = [StringDirective ".integerRead" "%d"]
 writeLabelCode :: Code
 writeLabelCode = [newLineWrite, stringWrite, integerWrite] where
     newLineWrite = StringDirective ".newLineWrite" "\n"
-    stringWrite =  StringDirective ".stringWrite"  "%s"
+    stringWrite =  StringDirective ".stringWrite"  "%s "
     integerWrite = StringDirective ".integerWrite" "%d "
 
 -- Have to generate code that assigns each string a label, but also have to keep
