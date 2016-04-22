@@ -1,5 +1,7 @@
 HC=ghc
-HCFLAGS=-O2
+HCFLAGS=-O2 -odir bin/objects -hidir bin/interfaces
+
+.PHONY: bpl
 
 all: bpl
 
@@ -36,11 +38,14 @@ Scanner: Scanner.hs Token.hs
 Token: Token.hs
 	$(HC) Token.hs $(HCFLAGS)
 
-simple:
-	rm -f *.o *.hi
-
-clean: simple
+clean:
 	rm -f Token Scanner ScannerTest
 	rm -f Grammar Parser ParserTest
 	rm -f Types Analyzer AnalyzerTest
 	rm -f Compiler bpl
+	rm -f *.s
+	rm -f *.out
+
+rebuild:
+	rm -f bin/objects/*
+	rm -f bin/interfaces/*
