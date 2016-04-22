@@ -271,10 +271,10 @@ processF s (Grammar.NegativeF f line) =
                 "Line " ++ show line ++ ": negative F must have child of type raw integer"
         loggedNode = logAssignment verifiedNode "F" line
         result = NegativeF f' loggedNode
-processF s (Grammar.ReferenceF factor line) =
+processF s (Grammar.ReferenceF lvalue line) =
     result where
-        factor' = processFactor s factor
-        node = nodeType factor'
+        lvalue' = processLValue s lvalue
+        node = nodeType lvalue'
         verifiedNode = case node of
             (r, RawNode) -> (r, PointerNode)
             (_, PointerNode) -> error $
@@ -282,11 +282,11 @@ processF s (Grammar.ReferenceF factor line) =
             (_, ArrayNode) -> error $
                 "Line " ++ show line ++ ": cannot reference array factor"
         loggedNode = logAssignment verifiedNode "F" line
-        result = ReferenceF factor' loggedNode
-processF s (Grammar.DereferenceF lvalue line) =
+        result = ReferenceF lvalue' loggedNode
+processF s (Grammar.DereferenceF factor line) =
     result where
-        lvalue' = processLValue s lvalue
-        node = nodeType lvalue'
+        factor' = processFactor s factor
+        node = nodeType factor'
         verifiedNode = case node of
             (r, PointerNode) -> (r, RawNode)
             (_, RawNode) -> error $
@@ -294,7 +294,7 @@ processF s (Grammar.DereferenceF lvalue line) =
             (_, ArrayNode) -> error $
                 "Line " ++ show line ++ ": cannot dereference array factor"
         loggedNode = logAssignment verifiedNode "F" line
-        result = DereferenceF lvalue' loggedNode
+        result = DereferenceF factor' loggedNode
 processF s (Grammar.SimpleF factor line) =
     SimpleF factor' loggedNode where
         factor' = processFactor s factor

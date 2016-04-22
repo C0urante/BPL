@@ -225,8 +225,8 @@ instance TypedNode T where
 
 data F =
     NegativeF F NodeType |
-    ReferenceF Factor NodeType |
-    DereferenceF LValue NodeType |
+    ReferenceF LValue NodeType |
+    DereferenceF Factor NodeType |
     SimpleF Factor NodeType
     deriving (Eq, Show)
 
@@ -256,7 +256,7 @@ instance TypedNode Factor where
     nodeType (ArrayReferenceFactor _ _ n) = n
     nodeType (NumberFactor _ n) = n
     nodeType (StringFactor _ n) = n
-    
+
 data LValue =
     RawLValue Identifier NodeType |
     ArrayLValue Identifier Expression NodeType
