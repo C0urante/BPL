@@ -171,6 +171,7 @@ processExpression s (Grammar.AssignmentExpression (Grammar.Var i m l) e line) =
             VarDecType v -> v
             FunDecType _ -> error $
                 "Line " ++ show line ++ ": cannot assign to function "  ++ i
+        -- The varType of the left-hand side
         alteredVar = case m of
             Grammar.RawVar -> var
             Grammar.PointerVar -> case varMeta var of
@@ -186,8 +187,12 @@ processExpression s (Grammar.AssignmentExpression (Grammar.Var i m l) e line) =
                 PointerVar -> error $
                     "Line " ++ show line ++ ": cannot assign to index of pointer variable " ++ i
         e' = processExpression s e
+        -- The kind of assignment that's occurring
         a = case m of
-            Grammar.RawVar -> RawAssignment
+            Grammar.RawVar -> case varMeta var of
+                ArrayVar _ -> error $
+                    "Line " ++ show line ++ ": cannot perform raw assignment on arrays"
+                _ -> RawAssignment
             Grammar.PointerVar -> DereferenceAssignment
             Grammar.ArrayVar e'' -> let index = processExpression s e'' in
                 if nodeType index == (IntNode, RawNode)
