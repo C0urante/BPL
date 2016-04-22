@@ -283,10 +283,10 @@ processF s (Grammar.ReferenceF factor line) =
                 "Line " ++ show line ++ ": cannot reference array factor"
         loggedNode = logAssignment verifiedNode "F" line
         result = ReferenceF factor' loggedNode
-processF s (Grammar.DereferenceF factor line) =
+processF s (Grammar.DereferenceF lvalue line) =
     result where
-        factor' = processFactor s factor
-        node = nodeType factor'
+        lvalue' = processLValue s lvalue
+        node = nodeType lvalue'
         verifiedNode = case node of
             (r, PointerNode) -> (r, RawNode)
             (_, RawNode) -> error $
@@ -294,7 +294,7 @@ processF s (Grammar.DereferenceF factor line) =
             (_, ArrayNode) -> error $
                 "Line " ++ show line ++ ": cannot dereference array factor"
         loggedNode = logAssignment verifiedNode "F" line
-        result = DereferenceF factor' loggedNode
+        result = DereferenceF lvalue' loggedNode
 processF s (Grammar.SimpleF factor line) =
     SimpleF factor' loggedNode where
         factor' = processFactor s factor
@@ -359,6 +359,43 @@ processFactor _ (Grammar.NumberFactor n line) = result where
 processFactor _ (Grammar.StringFactor s' line) = result where
     loggedNode = logAssignment (StringNode, RawNode) "Factor" line
     result = StringFactor s' loggedNode
+
+processLValue :: Scope -> Grammar.Factor -> LValue
+processLValue s (Grammar.VarFactor i line) = result where
+    result = RawLValue i loggedNode
+    dec = Types.lookup s i line
+    var = case dec of
+        (VarDecType v) -> v
+        (FunDecType _) -> error $
+            "Line " ++ show line ++ ": cannot reference function"
+    node = case var of
+        (r, RawVar) -> varNodeType (r, RawVar)
+        (_, PointerVar) -> error $
+            "Line " ++ show line ++ ": cannot reference pointer variable"
+        (_, ArrayVar _) -> error $
+            "Line " ++ show line ++ ": cannot reference array variable"
+    loggedNode = logAssignment node "LValue" line
+processLValue s (Grammar.ArrayReferenceFactor i e line) = verifiedResult where
+    e' = processExpression s e
+    dec = Types.lookup s i line
+    var = case dec of
+        (VarDecType v) -> v
+        (FunDecType _) -> error $
+            "Line " ++ show line ++ ": cannot reference function"
+    node = case var of
+        (r, ArrayVar _) -> varNodeType (r, RawVar)
+        (_, RawVar) -> error $
+            "Line " ++ show line ++ ": cannot index raw variable"
+        (_, PointerVar) -> error $
+            "Line " ++ show line ++ ": cannot index pointer variable"
+    loggedNode = logAssignment node "LValue" line
+    verifiedResult = case nodeType e' of
+        (IntNode, RawNode) -> ArrayLValue i e' loggedNode
+        _ -> error $
+            "Line " ++ show line ++ ": array indices must be of type raw integer"
+processLValue s (Grammar.GroupedFactor e _) = extractLValueFromExpression s e
+processLValue _ f = error $ "Line " ++ show line ++ ": cannot reference non-lvalue" where
+    line = extractLineFromFactor f
 
 processFunCall :: Scope -> Grammar.FunCall -> FunCall
 processFunCall s (Grammar.FunCall i (Grammar.EmptyArgs _) line) =
@@ -497,3 +534,25 @@ processMulOp :: Grammar.MulOp -> MulOp
 processMulOp (Grammar.TimesMulOp _) = TimesMulOp
 processMulOp (Grammar.DivMulOp _) = DivMulOp
 processMulOp (Grammar.ModMulOp _) = ModMulOp
+
+extractLValueFromExpression :: Scope -> Grammar.Expression -> LValue
+extractLValueFromExpression s
+    (Grammar.SimpleExpression
+    (Grammar.SimpleExp
+    (Grammar.SimpleE
+    (Grammar.SimpleT
+    (Grammar.SimpleF f _) _) _) _) _) = processLValue s f
+extractLValueFromExpression s (Grammar.AssignmentExpression _ e _) = result where
+    result = extractLValueFromExpression s e
+extractLValueFromExpression _ line = error $
+    "Line " ++ show line ++ ": cannot reference non-lvalue"
+
+extractLineFromFactor :: Grammar.Factor -> LineNumber
+extractLineFromFactor (Grammar.GroupedFactor _ l) = l
+extractLineFromFactor (Grammar.FunCallFactor _ l) = l
+extractLineFromFactor (Grammar.ReadFactor l) = l
+extractLineFromFactor (Grammar.DereferenceFactor _ l) = l
+extractLineFromFactor (Grammar.VarFactor _ l) = l
+extractLineFromFactor (Grammar.ArrayReferenceFactor _ _ l) = l
+extractLineFromFactor (Grammar.NumberFactor _ l) = l
+extractLineFromFactor (Grammar.StringFactor _ l) = l
