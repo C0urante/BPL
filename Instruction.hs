@@ -135,12 +135,12 @@ data AssemblyLine = DataDirective
                   | JumpInstruction Label
                   | CompareInstruction Source Destination
                   | CompareHalfInstruction SourceHalf DestinationHalf
-                  | SetLessInstruction DestinationHalf
-                  | SetLessEqualInstruction DestinationHalf
-                  | SetEqualInstruction DestinationHalf
-                  | SetNotEqualInstruction DestinationHalf
-                  | SetGreaterEqualInstruction DestinationHalf
-                  | SetGreaterInstruction DestinationHalf
+                  | SetLessInstruction Destination
+                  | SetLessEqualInstruction Destination
+                  | SetEqualInstruction Destination
+                  | SetNotEqualInstruction Destination
+                  | SetGreaterEqualInstruction Destination
+                  | SetGreaterInstruction Destination
                   | TestInstruction Source Destination
                   | TestHalfInstruction SourceHalf DestinationHalf
                   | JumpLessInstruction Label
@@ -212,10 +212,10 @@ instance Show AssemblyLine where
     show (ShiftLeftInstruction s d) =       "\tsalq\t" ++ show s ++ ", " ++ show d
     show (Comment s) =                      "# " ++ s
 
-showRelOpInstruction :: String -> DestinationHalf -> String
+showRelOpInstruction :: String -> Destination -> String
 showRelOpInstruction op destination = setInstruction ++ expandInstruction where
     setInstruction = "\tset" ++ op ++ "\t%al\n"
-    expandInstruction = "\tmovzbl\t%al, " ++ show destination
+    expandInstruction = "\tmovzbq\t%al, " ++ show destination
 
 data DivOperator = Division | Modulus
 
