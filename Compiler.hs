@@ -201,7 +201,7 @@ processLocalDecs (LocalDecs ivs) scope frameSize = result where
 
 processArrayDecs :: [Variable] -> Scope -> FrameSize -> (Scope, Int)
 processArrayDecs ivs scope frameSize = (newScope, frameSpace) where
-    addArray (s, f) (i, (_, ArrayVar n)) = (Map.insert i (LocalVariable (-(frameSize + f + 8))) s, f + (8 * n))
+    addArray (s, f) (i, (_, ArrayVar n)) = (Map.insert i (LocalVariable (-(frameSize + f + (8 * n)))) s, f + (8 * n))
     (newScope, frameSpace) = foldl addArray (scope, 0) ivs
 
 processVarDecs :: [Variable] -> Scope -> FrameSize -> (Scope, Int)
@@ -335,6 +335,8 @@ processArrayAssignment expressionCode indexCode leftLookup = result where
     commentOne = [Comment "Evaluating index of array assignment"]
     commentTwo = [Comment "Evaluating expression on right side of array assignment"]
     commentThree = [Comment "Moving evaluated expression to left side of array assignment"]
+    offsetInstruction = ShiftLeftInstruction (SourceImmediate 3) (DestinationRegister Accumulator)
+    -- <offsetInstruction> multiplies the value of the index (in the accumulator) by eight (size of element)
     loadBaseInstruction = case leftLookup of
         (LocalVariable o) -> LoadAddressInstruction (frameSource o) (DestinationRegister TempOne)
         (GlobalVariable l) -> LoadAddressInstruction (SourceLabel l) (DestinationRegister TempOne)
@@ -342,8 +344,6 @@ processArrayAssignment expressionCode indexCode leftLookup = result where
         (Function _) -> error
             "Function encountered as lvalue. This should never happen."
     -- <loadBaseInstruction> moves the base address of the array into TempOne
-    offsetInstruction = ShiftLeftInstruction (SourceImmediate 3) (DestinationRegister Accumulator)
-    -- <offsetInstruction> multiplies the value of the index (in the accumulator) by eight (size of element)
     calculateAddressInstruction = AddInstruction (SourceRegister Accumulator) (DestinationRegister TempOne)
     -- <calculateAddressInstruction> moves the address of the array element into TempOne
     loadAddressCode = indexCode ++ [offsetInstruction, loadBaseInstruction, calculateAddressInstruction]
@@ -366,7 +366,7 @@ processCompExp (CompExp e r e' _) scope strings = result where
         NotEqualRelOp -> SetNotEqualInstruction
         GreaterThanOrEqualRelOp -> SetGreaterEqualInstruction
         GreaterThanRelOp -> SetGreaterInstruction
-    setCode = [setInstruction (DestinationHalfRegister AccumulatorHalf)]
+    setCode = [setInstruction (DestinationRegister Accumulator)]
     result = rightECode ++ pushRightECode ++ leftECode ++ popRightECode ++ comparison ++ setCode
 processCompExp (SimpleExp e _) scope strings = processE e scope strings
 
@@ -410,7 +410,7 @@ processF (ReferenceF (RawLValue i _) _) scope _ = result where
             "Function encountered as lvalue. This should never happen."
     result = [LoadAddressInstruction source (DestinationRegister Accumulator)]
 processF (ReferenceF (ArrayLValue i e _) _) scope strings = result where
-    result = expressionCode ++ [loadIndex, calculateOffset, calculateAddress]
+    result = expressionCode ++ [loadBase, calculateOffset, calculateAddress]
     expressionCode = processExpression e scope strings
     -- <expressionCode> calculates the array index value and puts it into the accumulator
     varLookup = scope Map.! i
@@ -421,11 +421,12 @@ processF (ReferenceF (ArrayLValue i e _) _) scope strings = result where
             "An array has been encountered as a reference f in the code generation phase. This should never happen."
         (Function _) -> error
             "Function encountered as lvalue. This should never happen."
-    loadIndex = LoadAddressInstruction source (DestinationRegister TempOne)
-    -- <loadIndex> moves the address of the base of the array into TempOne
     calculateOffset = ShiftLeftInstruction (SourceImmediate 3) (DestinationRegister Accumulator)
-    calculateAddress = AddInstruction (SourceRegister TempOne) (DestinationRegister Accumulator)
-    -- <moveAddress>
+    -- <calculateOffset> multiplies the index by eight to get the offset from the base address
+    loadBase = LoadAddressInstruction source (DestinationRegister TempOne)
+    -- <loadBase> moves the address of the base of the array into TempOne
+    calculateAddress = AddInstruction (SourceRegister Accumulator) (DestinationRegister TempOne)
+    -- <calculateAddress> subtracts the offset from the base address, returning the address of the array element
 processF (DereferenceF factor _) scope strings = factorCode ++ [moveResult] where
     factorCode = processFactor factor scope strings
     moveResult = MoveInstruction (SourceOffset (Offset Accumulator 0)) (DestinationRegister Accumulator)
@@ -467,7 +468,7 @@ processFactor (VarFactor i (_, ArrayNode)) scope _ = [result] where
     varLookup = scope Map.! i
     result = case varLookup of
         (LocalVariable o) -> LoadAddressInstruction (frameSource o) (DestinationRegister Accumulator)
-        (GlobalVariable l) -> MoveInstruction (SourceLabel l) (DestinationRegister Accumulator)
+        (GlobalVariable l) -> LoadAddressInstruction (SourceLabel l) (DestinationRegister Accumulator)
         (ArrayParameter o) -> MoveInstruction (frameSource o) (DestinationRegister Accumulator)
         (Function _) -> error
             "A function call has been encountered as an array variable factor in the code generation phase. This should never happen."
@@ -481,9 +482,9 @@ processFactor (VarFactor i _) scope _ = [result] where
         (Function _) -> error
             "A function call has been encountered as a variable in the code generation phase. This should never happen."
 processFactor (ArrayReferenceFactor i e _) scope strings = result where
-    result = indexValue ++ [indexShift, base, address, moveResult]
+    result = indexValue ++ [indexShift, base, calculateAddress, moveResult]
     indexValue = processExpression e scope strings
-    -- <indexValue moves the evaluated value of <e> into the accumulator register
+    -- <indexValue> evalutaes <e> and leaves its value in the accumulator register
     indexShift = ShiftLeftInstruction (SourceImmediate 3) (DestinationRegister Accumulator)
     -- <indexShift> shifts the index left by three bits, to get the offset from the base
     baseLookup = scope Map.! i
@@ -494,10 +495,10 @@ processFactor (ArrayReferenceFactor i e _) scope strings = result where
         (Function _) -> error
             "A function call has been encountered as a variable in the code generation phase. This should never happen."
     -- <base> should move the base address of the array referenced by <i> into temporary register one
-    address = AddInstruction (SourceRegister TempOne) (DestinationRegister Accumulator)
-    -- <address> should move the actual address of the array element into the accumulator
-    moveResult = MoveInstruction (SourceOffset (Offset Accumulator 0)) (DestinationRegister Accumulator)
-    -- <moveResult> loads the memory location referenced by the accumulator into the accumulator itself
+    calculateAddress = AddInstruction (SourceRegister Accumulator) (DestinationRegister TempOne)
+    -- <calculateAddress> should move the actual address of the array element into TempOne
+    moveResult = MoveInstruction (SourceOffset (Offset TempOne 0)) (DestinationRegister Accumulator)
+    -- <moveResult> loads the memory location referenced by TempOne into the accumulator
 processFactor (NumberFactor n _) _ _ = [result] where
     result = MoveInstruction (SourceImmediate n) (DestinationRegister Accumulator)
 processFactor (StringFactor s _) _ strings = [result] where
