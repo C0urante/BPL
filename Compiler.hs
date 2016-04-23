@@ -162,7 +162,7 @@ extractFunctions (Program ds) = map extractFunction $ filter isFunDec ds where
 -- will be found in eax or rax.
 processFunction :: Scope -> Strings -> Function -> Code
 processFunction scope strings (i, _, ps, c) = result where
-    result = functionLabel ++ setFramePointerCode ++ bodyCode ++ returnCode
+    result = functionLabel ++ setFramePointerCode ++ bodyCode
     functionLabel = [LabelDirective i]
     labels = labelStream $ i ++ "C"
     (newScope, _) = foldl addArgToScope (scope, 8) ps
@@ -171,7 +171,6 @@ processFunction scope strings (i, _, ps, c) = result where
         _ -> (Map.insert i' (LocalVariable f) s, f + 8)
     setFramePointerCode = [MoveInstruction (SourceRegister StackPointer) (DestinationRegister SaveOne)]
     (bodyCode, _) = processCompoundStmt c newScope strings 0 labels
-    returnCode = [ReturnInstruction]
 
 processCompoundStmt :: CompoundStmt -> Scope -> Strings -> FrameSize -> [Label] -> (Code, [Label])
 processCompoundStmt (CompoundStmt ld ss) scope strings frameSize labels = (code, remainingLabels) where
@@ -241,14 +240,14 @@ processStatement (WhileStmt e s) scope strings frameSize (loopLabel:breakLabel:l
     (bodyCode, remainingLabels) = processStatement s scope strings frameSize labels
     loopJump = [JumpInstruction loopLabel]
     breakLabelCode = [LabelDirective breakLabel]
-processStatement (ReturnStmt e) scope strings frameSize labels = (code, labels) where
-    code = expressionCode ++ [stackIncrementInstruction, returnInstruction]
+processStatement (ReturnStmt e) scope strings _ labels = (code, labels) where
+    code = expressionCode ++ [stackRestoreInstruction, returnInstruction]
     expressionCode = processExpression e scope strings
-    stackIncrementInstruction = AddInstruction (SourceImmediate frameSize) (DestinationRegister StackPointer)
+    stackRestoreInstruction = MoveInstruction (SourceRegister SaveOne) (DestinationRegister StackPointer)
     returnInstruction = ReturnInstruction
-processStatement EmptyReturnStmt _ _ frameSize labels = (code, labels) where
-    code = [stackIncrementInstruction, returnInstruction]
-    stackIncrementInstruction = AddInstruction (SourceImmediate frameSize) (DestinationRegister StackPointer)
+processStatement EmptyReturnStmt _ _ _ labels = (code, labels) where
+    code = [stackRestoreInstruction, returnInstruction]
+    stackRestoreInstruction = MoveInstruction (SourceRegister SaveOne) (DestinationRegister StackPointer)
     returnInstruction = ReturnInstruction
 processStatement (WriteStmt e) scope strings _ labels = (code, labels) where
     code = [commentOne] ++ expressionCode ++ [commentTwo, loadFirstArgument, loadFormatString, clearAccumulator, callFunction, commentThree]
@@ -502,8 +501,8 @@ processFactor (ArrayReferenceFactor i e _) scope strings = result where
 processFactor (NumberFactor n _) _ _ = [result] where
     result = MoveInstruction (SourceImmediate n) (DestinationRegister Accumulator)
 processFactor (StringFactor s _) _ strings = [result] where
-    result = LoadAddressInstruction (SourceLabel label) (DestinationRegister Accumulator)
     label = strings Map.! s
+    result = LoadAddressInstruction (SourceLabel label) (DestinationRegister Accumulator)
 
 --  Before the call the caller pushes the arguments onto the stack in reverse order (last argument first, first
 -- argument last) then pushes the fp onto the stack and makes the call.
