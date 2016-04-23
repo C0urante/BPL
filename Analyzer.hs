@@ -102,11 +102,11 @@ returnVerifiedFunction i r ps c = verifiedResult where
 statementHasReturn :: Statement -> Bool
 statementHasReturn (EmptyReturnStmt) = True
 statementHasReturn (ReturnStmt _) = True
-statementHasReturn (IfStmt _ _) = False -- cannot guarantee that body will be executed
 statementHasReturn (IfElseStmt _ s s') = statementHasReturn s && statementHasReturn s'
-statementHasReturn (WhileStmt _ s) = False --cannot guarantee that body will be executed
 statementHasReturn (CompoundStmtStmt (CompoundStmt _ ss)) = any statementHasReturn ss
 statementHasReturn _ = False
+--  IfStmt and WhileStmt must both be False, since there is no guarantee that
+-- their bodies will ever be executed.
 
 processParams :: Grammar.Params -> [(Identifier, VarType)]
 processParams (Grammar.EmptyParams _) = []
