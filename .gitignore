@@ -12,5 +12,5 @@ ScannerTest
 ParserTest
 AnalyzerTest
 bpl
-bpl.sh
+.cheating
 test/*
