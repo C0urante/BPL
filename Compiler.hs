@@ -32,9 +32,8 @@ compile p = result where
 labelStream :: String -> [Label]
 labelStream prefix = map (((".L" ++ prefix) ++) . show) ([0..] :: [Int])
 
--- As of right now, the only purpose for this is to generate directives for string
--- literals used in the program and in calls to printf/scanf, and track the labels
--- given to string literals.
+--  The only purpose for this is to generate directives for string literals used in the
+-- program and in calls to printf/scanf, and track the labels given to those string literals.
 readOnlySection :: Program -> (Code, Strings)
 readOnlySection p = (code, strings) where
     stringLiterals = extractStringLiterals p
@@ -151,11 +150,9 @@ extractFunctions (Program ds) = map extractFunction $ filter isFunDec ds where
 --  Before the call the caller pushes the arguments onto the stack in reverse order (last argument first, first
 -- argument last) then pushes the fp onto the stack and makes the call.
 --  At the start of the call the callee puts the current stack pointer, which points at the return address, into
--- the frame pointer. [REMOVED: The callee then decrements the stack pointer by 8 times the number of local variables,
--- to allocate room for all of the local variables.]
+-- the frame pointer.
 --  At the return the callee puts into eax or rax any return value, then pops off the stack any temporary data
--- saved there [REMOVED: then increments the stack pointer to de-allocate the local variables]. The callee then executes
--- a ret.
+-- saved there. The callee then executes a ret.
 --  The return instruction pops the return address off the stack.
 --  At the return the caller pops the stack into the fp, restoring fp into what it was before the call. The
 -- caller then increments the stack by enough to pop the arguments that were pushed there. Any return value
@@ -479,10 +476,20 @@ processFactor :: Factor -> Scope -> Strings -> Code
 processFactor (GroupedFactor e _) scope strings = processExpression e scope strings
 processFactor (FunCallFactor f _) scope strings = processFunCall f scope strings
 processFactor (ReadFactor _) _ _ = result where
-    result = [commentOne, decrementStack, loadReadString, loadCallAddress, callScanf, moveResult, incrementStack, commentTwo]
+    result = [commentOne, decrementStack] ++ alignStack ++ [loadReadString, loadCallAddress, callScanf, moveResult] ++ unalignStack ++ [incrementStack, commentTwo]
     commentOne = Comment "Beginning call to read()"
     decrementStack = SubInstruction (SourceImmediate 40) (DestinationRegister StackPointer)
     --  Decrement the stack pointer by 40 bytes.
+    -- NEW
+    alignComment = Comment "Attempting to align stack before call to scanf"
+    unalignComment = Comment "Attempting to undo stack alignment after call to scanf"
+    copyStackPointer = MoveInstruction (SourceRegister StackPointer) (DestinationRegister TempOne)
+    modStackPointer = AndInstruction (SourceImmediate 15) (DestinationRegister TempOne)
+    moveStackPointerDown = SubInstruction (SourceRegister TempOne) (DestinationRegister StackPointer)
+    moveStackPointerUp = AddInstruction (SourceRegister TempOne) (DestinationRegister StackPointer)
+    alignStack = [alignComment, copyStackPointer, modStackPointer, moveStackPointerDown]
+    unalignStack = [unalignComment, copyStackPointer, modStackPointer, moveStackPointerUp]
+    -- NEW
     loadReadString = LoadAddressInstruction (SourceLabel ".integerRead") (DestinationRegister TempOne)
     --  Put $.integerRead into TempOne
     loadCallAddress = LoadAddressInstruction (SourceOffset (Offset StackPointer 24)) (DestinationRegister TempTwo)
