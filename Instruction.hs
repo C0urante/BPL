@@ -161,6 +161,7 @@ data AssemblyLine = DataDirective
                   | MulInstruction SourceHalf DestinationHalf
                   | DivInstruction SourceHalf SourceHalf DestinationHalf
                   | ModInstruction SourceHalf SourceHalf DestinationHalf
+                  | AndInstruction Source Destination
                   | ShiftLeftInstruction Source Destination
                   | Comment String
                     deriving (Eq)
@@ -209,6 +210,7 @@ instance Show AssemblyLine where
     show (MulInstruction s d) =             "\timul\t" ++ show s ++ ", " ++ show d
     show (DivInstruction s s' d) =          showDivModInstruction s s' d Division
     show (ModInstruction s s' d) =          showDivModInstruction s s' d Modulus
+    show (AndInstruction s d) =             "\tandq\t" ++ show s ++ ", " ++ show d
     show (ShiftLeftInstruction s d) =       "\tsalq\t" ++ show s ++ ", " ++ show d
     show (Comment s) =                      "# " ++ s
 
