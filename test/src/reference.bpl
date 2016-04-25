@@ -6,16 +6,25 @@ void main(void) {
     v = 5;
     ptr = &a[4];
     *ptr = v;
+    ptr = &v;
 
-    write("v = ");
+    write("v =");
     write(v);
     writeln();
 
-    write("a[4] = ");
+    write("a[4] =");
     write(a[4]);
     writeln();
 
-    write("*ptr = ");
+    write("*ptr =");
     write(*ptr);
+    writeln();
+
+    write("*(&v) =");
+    write(*(&v));
+    writeln();
+
+    write("*(&*ptr) =");
+    write(*(&*ptr));
     writeln();
 }
