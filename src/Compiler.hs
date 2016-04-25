@@ -437,6 +437,16 @@ processF (ReferenceF (RawLValue i _) _) scope _ = result where
         (Function _) -> error
             "Function encountered as lvalue. This should never happen."
     result = [LoadAddressInstruction source (DestinationRegister Accumulator)]
+processF (ReferenceF (PointerLValue i _) _) scope _ = result where
+    varLookup = scope Map.! i
+    source = case varLookup of
+        (LocalVariable o) -> frameSource o
+        (GlobalVariable l) -> SourceLabel l
+        (ArrayParameter _) -> error
+            "An array has been encountered as a reference f in the code generation phase. This should never happen."
+        (Function _) -> error
+            "Function encountered as lvalue. This should never happen."
+    result = [MoveInstruction source (DestinationRegister Accumulator)]
 processF (ReferenceF (ArrayLValue i e n) _) scope strings = result where
     result = expressionCode ++ [loadBase, calculateOffset, calculateAddress]
     expressionCode = processExpression e scope strings

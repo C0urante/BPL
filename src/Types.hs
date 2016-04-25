@@ -259,11 +259,13 @@ instance TypedNode Factor where
 
 data LValue =
     RawLValue Identifier NodeType |
+    PointerLValue Identifier NodeType |
     ArrayLValue Identifier Expression NodeType
     deriving (Eq, Show)
 
 instance TypedNode LValue where
     nodeType (RawLValue _ n) = n
+    nodeType (PointerLValue _ n) = n
     nodeType (ArrayLValue _ _ n) = n
 
 data FunCall =

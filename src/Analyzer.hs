@@ -308,10 +308,10 @@ processF s (Grammar.NegativeF f line) =
                 "Line " ++ show line ++ ": negative F must have child of type raw integer"
         loggedNode = logAssignment verifiedNode "F" line
         result = NegativeF f' loggedNode
-processF s (Grammar.ReferenceF lvalue line) =
+processF s (Grammar.ReferenceF factor line) =
     result where
-        lvalue' = processLValue s lvalue
-        node = nodeType lvalue'
+        lvalue = processLValue s factor
+        node = nodeType lvalue
         verifiedNode = case node of
             (r, RawNode) -> (r, PointerNode)
             (_, PointerNode) -> error $
@@ -319,7 +319,7 @@ processF s (Grammar.ReferenceF lvalue line) =
             (_, ArrayNode) -> error $
                 "Line " ++ show line ++ ": cannot reference array factor"
         loggedNode = logAssignment verifiedNode "F" line
-        result = ReferenceF lvalue' loggedNode
+        result = ReferenceF lvalue loggedNode
 processF s (Grammar.DereferenceF factor line) =
     result where
         factor' = processFactor s factor
@@ -411,6 +411,20 @@ processLValue s (Grammar.VarFactor i line) = result where
             "Line " ++ show line ++ ": cannot reference pointer variable"
         (_, ArrayVar _) -> error $
             "Line " ++ show line ++ ": cannot reference array variable"
+    loggedNode = logAssignment node "LValue" line
+processLValue s (Grammar.DereferenceFactor i line) = result where
+    result = PointerLValue i loggedNode
+    dec = Types.lookup s i line
+    var = case dec of
+        (VarDecType v) -> v
+        (FunDecType _) -> error $
+            "Line " ++ show line ++ ": cannot reference function"
+    node = case var of
+        (r, PointerVar) ->  varNodeType (r, RawVar)
+        (_, RawVar) -> error $
+            "Line " ++ show line ++ ": cannot dereference raw variable"
+        (_, ArrayVar _) -> error $
+            "Line " ++ show line ++ ": cannot dereference array variable"
     loggedNode = logAssignment node "LValue" line
 processLValue s (Grammar.ArrayReferenceFactor i e line) = verifiedResult where
     e' = processExpression s e
