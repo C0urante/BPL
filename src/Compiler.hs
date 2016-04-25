@@ -437,7 +437,7 @@ processF (ReferenceF (RawLValue i _) _) scope _ = result where
         (Function _) -> error
             "Function encountered as lvalue. This should never happen."
     result = [LoadAddressInstruction source (DestinationRegister Accumulator)]
-processF (ReferenceF (ArrayLValue i e _) n) scope strings = result where
+processF (ReferenceF (ArrayLValue i e n) _) scope strings = result where
     result = expressionCode ++ [loadBase, calculateOffset, calculateAddress]
     expressionCode = processExpression e scope strings
     -- <expressionCode> calculates the array index value and puts it into the accumulator
@@ -457,8 +457,8 @@ processF (ReferenceF (ArrayLValue i e _) n) scope strings = result where
     -- <calculateOffset> multiplies the index by the size of an array element to get the offset from the base address
     loadBase = LoadAddressInstruction source (DestinationRegister TempOne)
     -- <loadBase> moves the address of the base of the array into TempOne
-    calculateAddress = AddInstruction (SourceRegister Accumulator) (DestinationRegister TempOne)
-    -- <calculateAddress> subtracts the offset from the base address, returning the address of the array element
+    calculateAddress = AddInstruction (SourceRegister TempOne) (DestinationRegister Accumulator)
+    -- <calculateAddress> adds the offset to the base address, returning the address of the array element
 processF (DereferenceF factor n) scope strings = factorCode ++ moveResult where
     factorCode = processFactor factor scope strings
     moveHalf = MoveHalfInstruction (SourceHalfOffset (Offset Accumulator 0)) (DestinationHalfRegister AccumulatorHalf)
