@@ -554,11 +554,11 @@ processFactor (VarFactor i n) scope _ = result where
         8 -> [moveFull]
         size -> error $
             "Cannot move variable " ++ i ++ " of size " ++ show size ++ " into accumulator register."
-processFactor (ArrayReferenceFactor i e _) scope strings = result where
+processFactor (ArrayReferenceFactor i e n) scope strings = result where
     result = indexValue ++ [indexShift, base, calculateAddress, moveResult]
     indexValue = processExpression e scope strings
-    -- <indexValue> evalutaes <e> and leaves its value in the accumulator register
-    indexShift = case sizeOfNode $ nodeType e of
+    -- <indexValue> evaluates <e> and leaves its value in the accumulator register
+    indexShift = case sizeOfNode n of
         4 -> ShiftLeftInstruction (SourceImmediate 2) (DestinationRegister Accumulator)
         8 -> ShiftLeftInstruction (SourceImmediate 3) (DestinationRegister Accumulator)
         -- TODO: Get rid of this ridiculous copout
