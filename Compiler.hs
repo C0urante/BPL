@@ -478,18 +478,15 @@ processFactor (FunCallFactor f _) scope strings = processFunCall f scope strings
 processFactor (ReadFactor _) _ _ = result where
     result = [commentOne, decrementStack] ++ alignStack ++ [loadReadString, loadCallAddress, callScanf, moveResult] ++ unalignStack ++ [incrementStack, commentTwo]
     commentOne = Comment "Beginning call to read()"
-    decrementStack = SubInstruction (SourceImmediate 40) (DestinationRegister StackPointer)
-    --  Decrement the stack pointer by 40 bytes.
-    -- NEW
-    alignComment = Comment "Attempting to align stack before call to scanf"
-    unalignComment = Comment "Attempting to undo stack alignment after call to scanf"
-    copyStackPointer = MoveInstruction (SourceRegister StackPointer) (DestinationRegister TempOne)
-    modStackPointer = AndInstruction (SourceImmediate 15) (DestinationRegister TempOne)
-    moveStackPointerDown = SubInstruction (SourceRegister TempOne) (DestinationRegister StackPointer)
-    moveStackPointerUp = AddInstruction (SourceRegister TempOne) (DestinationRegister StackPointer)
-    alignStack = [alignComment, copyStackPointer, modStackPointer, moveStackPointerDown]
-    unalignStack = [unalignComment, copyStackPointer, modStackPointer, moveStackPointerUp]
-    -- NEW
+    decrementStack = SubInstruction (SourceImmediate 28) (DestinationRegister StackPointer)
+    --  Decrement the stack pointer by 28 bytes.
+    aligningComment = Comment "Attempting to align stack before call to scanf"
+    copyStackPointer = MoveInstruction (SourceRegister StackPointer) (DestinationRegister SaveTwo)
+    modStackPointer = AndInstruction (SourceImmediate 15) (DestinationRegister SaveTwo)
+    moveStackPointerDown = SubInstruction (SourceRegister SaveTwo) (DestinationRegister StackPointer)
+    alignedComment = Comment "Stack should now be aligned."
+    alignStack = [aligningComment, copyStackPointer, modStackPointer, moveStackPointerDown, alignedComment]
+    --  Align the stack on a 16-byte boundary
     loadReadString = LoadAddressInstruction (SourceLabel ".integerRead") (DestinationRegister TempOne)
     --  Put $.integerRead into TempOne
     loadCallAddress = LoadAddressInstruction (SourceOffset (Offset StackPointer 24)) (DestinationRegister TempTwo)
@@ -498,8 +495,13 @@ processFactor (ReadFactor _) _ _ = result where
     --  Call scanf
     moveResult = MoveHalfInstruction (SourceHalfOffset (Offset StackPointer 24)) (DestinationHalfRegister AccumulatorHalf)
     --  Move 24(%rsp) into Accumulator.
-    incrementStack = AddInstruction (SourceImmediate 40) (DestinationRegister StackPointer)
-    --  Increment the stack pointer by 40 bytes
+    unaligningComment = Comment "Attempting to undo stack alignment after call to scanf"
+    moveStackPointerUp = AddInstruction (SourceRegister SaveTwo) (DestinationRegister StackPointer)
+    unalignedComment = Comment "Stack alignment should now be undone."
+    unalignStack = [unaligningComment, moveStackPointerUp, unalignedComment]
+    --  Undo previous stack alignment efforts (the SaveTwo register should be preserved across the call to scanf)
+    incrementStack = AddInstruction (SourceImmediate 28) (DestinationRegister StackPointer)
+    --  Increment the stack pointer by 28 bytes
     commentTwo = Comment "Ending call to read()"
 processFactor (DereferenceFactor i n) scope _ = result where
     varLookup = scope Map.! i
