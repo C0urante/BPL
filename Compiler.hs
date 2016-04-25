@@ -32,9 +32,8 @@ compile p = result where
 labelStream :: String -> [Label]
 labelStream prefix = map (((".L" ++ prefix) ++) . show) ([0..] :: [Int])
 
--- As of right now, the only purpose for this is to generate directives for string
--- literals used in the program and in calls to printf/scanf, and track the labels
--- given to string literals.
+--  The only purpose for this is to generate directives for string literals used in the
+-- program and in calls to printf/scanf, and track the labels given to those string literals.
 readOnlySection :: Program -> (Code, Strings)
 readOnlySection p = (code, strings) where
     stringLiterals = extractStringLiterals p
@@ -100,8 +99,8 @@ dataSection p = result where
     isArray (_, (_, ArrayVar _)) = True
     isArray _  = False
     (arrays, vars) = partition isArray globals
-    (arrayCode, arrayScope) = arraySection arrays Map.empty
-    (varCode, fullScope) = varSection vars arrayScope
+    (arrayCode, arrayScope) = arrayDataSection arrays Map.empty
+    (varCode, fullScope) = varDataSection vars arrayScope
     result = if null globals
         then ([], Map.empty)
         else ([DataDirective] ++ arrayCode ++ varCode, fullScope)
@@ -112,18 +111,18 @@ extractGlobalVariables (Program ds) = map extractVariable $ filter isVarDec ds w
     isVarDec (FunDec _ _ _ _) = False
     extractVariable (VarDec i t) = (i, t)
 
-arraySection :: [Variable] -> Scope -> (Code, Scope)
-arraySection vs s = (code, scope) where
-    arrayLine ((_, (_, ArrayVar n)), l) = CommDirective l (n * 8) 8
+arrayDataSection :: [Variable] -> Scope -> (Code, Scope)
+arrayDataSection vs s = (code, scope) where
+    arrayLine ((_, v), l) = CommDirective l (sizeOfVar v) 8
     addArrayToScope s' ((i, _), l) = Map.insert i (GlobalVariable l) s'
     arraysAndLabels = zip vs labels
     code = map arrayLine arraysAndLabels
     scope = foldl addArrayToScope s arraysAndLabels
     labels = labelStream "A"
 
-varSection :: [Variable] -> Scope -> (Code, Scope)
-varSection vs s = (code, scope) where
-    varLine (_, l) = CommDirective l 8 8
+varDataSection :: [Variable] -> Scope -> (Code, Scope)
+varDataSection vs s = (code, scope) where
+    varLine ((_, v), l) = CommDirective l (sizeOfVar v) 8
     addVarToScope s' ((i, _), l) = Map.insert i (GlobalVariable l) s'
     varsAndLabels = zip vs labels
     code = map varLine varsAndLabels
@@ -151,11 +150,9 @@ extractFunctions (Program ds) = map extractFunction $ filter isFunDec ds where
 --  Before the call the caller pushes the arguments onto the stack in reverse order (last argument first, first
 -- argument last) then pushes the fp onto the stack and makes the call.
 --  At the start of the call the callee puts the current stack pointer, which points at the return address, into
--- the frame pointer. [REMOVED: The callee then decrements the stack pointer by 8 times the number of local variables,
--- to allocate room for all of the local variables.]
+-- the frame pointer.
 --  At the return the callee puts into eax or rax any return value, then pops off the stack any temporary data
--- saved there [REMOVED: then increments the stack pointer to de-allocate the local variables]. The callee then executes
--- a ret.
+-- saved there. The callee then executes a ret.
 --  The return instruction pops the return address off the stack.
 --  At the return the caller pops the stack into the fp, restoring fp into what it was before the call. The
 -- caller then increments the stack by enough to pop the arguments that were pushed there. Any return value
@@ -165,18 +162,22 @@ processFunction scope strings (i, _, ps, c) = result where
     result = functionLabel ++ setFramePointerCode ++ bodyCode
     functionLabel = [LabelDirective i]
     labels = labelStream $ i ++ "C"
-    (newScope, _) = foldl addArgToScope (scope, 8) ps
-    addArgToScope (s, f) (i', (_, m)) = case m of
+    (newScope, _) = foldl addArgToScope (scope, 8) ps -- Start at 8 to avoid touching 0(%rbx), where the return address is stored
+    addArgToScope (s, f) (i', v) = case varMeta v of
         (ArrayVar _) -> (Map.insert i' (ArrayParameter f) s, f + 8)
-        _ -> (Map.insert i' (LocalVariable f) s, f + 8)
+        _ -> case sizeOfNode $ varNodeType v of
+            4 -> (Map.insert i' (LocalVariable f) s, f + 4)
+            8 -> (Map.insert i' (LocalVariable f) s, f + 8)
+            size -> error $
+                "Cannot accept parameter of size " ++ show size ++ " for function " ++ i ++ "."
     setFramePointerCode = [MoveInstruction (SourceRegister StackPointer) (DestinationRegister SaveOne)]
-    (bodyCode, _) = processCompoundStmt c newScope strings 0 labels
+    (bodyCode, _) = processCompoundStmt c newScope strings 0 labels (i == "main")
 
-processCompoundStmt :: CompoundStmt -> Scope -> Strings -> FrameSize -> [Label] -> (Code, [Label])
-processCompoundStmt (CompoundStmt ld ss) scope strings frameSize labels = (code, remainingLabels) where
+processCompoundStmt :: CompoundStmt -> Scope -> Strings -> FrameSize -> [Label] -> Bool -> (Code, [Label])
+processCompoundStmt (CompoundStmt ld ss) scope strings frameSize labels isMain = (code, remainingLabels) where
     code = stackDecrementCode ++ statementsCode ++ stackIncrementCode
     (newScope, newFrameSize, stackDecrementCode, stackIncrementCode) = processLocalDecs ld scope frameSize
-    statementHelper (cs, ls) s = addStatementCode cs $ processStatement s newScope strings newFrameSize ls
+    statementHelper (cs, ls) s = addStatementCode cs $ processStatement s newScope strings newFrameSize ls isMain
     addStatementCode cs (sc, ls) = (cs ++ sc, ls)
     (statementsCode, remainingLabels) = foldl statementHelper ([], labels) ss
 
@@ -200,56 +201,59 @@ processLocalDecs (LocalDecs ivs) scope frameSize = result where
 
 processArrayDecs :: [Variable] -> Scope -> FrameSize -> (Scope, Int)
 processArrayDecs ivs scope frameSize = (newScope, frameSpace) where
-    addArray (s, f) (i, (_, ArrayVar n)) = (Map.insert i (LocalVariable (-(frameSize + f + (8 * n)))) s, f + (8 * n))
+    addArray (s, f) (i, v) = (Map.insert i (LocalVariable (-(frameSize + f + sizeOfVar v))) s, f + sizeOfVar v)
     (newScope, frameSpace) = foldl addArray (scope, 0) ivs
 
 processVarDecs :: [Variable] -> Scope -> FrameSize -> (Scope, Int)
 processVarDecs ivs scope frameSize = (newScope, frameSpace) where
-    addVar (s, f) (i, _) = (Map.insert i (LocalVariable (-(frameSize + f + 8))) s, f + 8)
+    addVar (s, f) (i, v) = (Map.insert i (LocalVariable (-(frameSize + f + sizeOfVar v))) s, f + sizeOfVar v)
     (newScope, frameSpace) = foldl addVar (scope, 0) ivs
 
-processStatement :: Statement -> Scope -> Strings -> FrameSize -> [Label] -> (Code, [Label])
-processStatement (ExpressionStmt e) scope strings _ labels = (code, labels) where
+processStatement :: Statement -> Scope -> Strings -> FrameSize -> [Label] -> Bool -> (Code, [Label])
+processStatement (ExpressionStmt e) scope strings _ labels _ = (code, labels) where
     code = processExpression e scope strings
-processStatement EmptyExpressionStmt _ _ _ labels = ([], labels)
-processStatement (CompoundStmtStmt c) scope strings frameSize labels = recursion where
-    recursion = processCompoundStmt c scope strings frameSize labels
-processStatement (IfStmt e s) scope strings frameSize (falseLabel:labels) = (code, remainingLabels) where
+processStatement EmptyExpressionStmt _ _ _ labels _ = ([], labels)
+processStatement (CompoundStmtStmt c) scope strings frameSize labels isMain = recursion where
+    recursion = processCompoundStmt c scope strings frameSize labels isMain
+processStatement (IfStmt e s) scope strings frameSize (falseLabel:labels) isMain = (code, remainingLabels) where
     code = conditionCode ++ [testCode, falseJump] ++ bodyCode ++ falseLabelCode
     conditionCode = processExpression e scope strings
     testCode = TestInstruction (SourceRegister Accumulator) (DestinationRegister Accumulator)
     falseJump = JumpZeroInstruction falseLabel
-    (bodyCode, remainingLabels) = processStatement s scope strings frameSize labels
+    (bodyCode, remainingLabels) = processStatement s scope strings frameSize labels isMain
     falseLabelCode = [LabelDirective falseLabel]
-processStatement (IfElseStmt e s s') scope strings frameSize (falseLabel:trueLabel:labels) = (code, remainingLabels) where
+processStatement (IfElseStmt e s s') scope strings frameSize (falseLabel:trueLabel:labels) isMain = (code, remainingLabels) where
     code = conditionCode ++ testCode ++ falseJump ++ trueCode ++ trueJump ++ falseLabelCode ++ falseCode ++ trueLabelCode
     conditionCode = processExpression e scope strings
     testCode = [TestInstruction (SourceRegister Accumulator) (DestinationRegister Accumulator)]
     falseJump = [JumpZeroInstruction falseLabel]
     trueJump = [JumpInstruction trueLabel]
-    (trueCode, falseLabels) = processStatement s scope strings frameSize labels
-    (falseCode, remainingLabels) = processStatement s' scope strings frameSize falseLabels
+    (trueCode, falseLabels) = processStatement s scope strings frameSize labels isMain
+    (falseCode, remainingLabels) = processStatement s' scope strings frameSize falseLabels isMain
     trueLabelCode = [LabelDirective trueLabel]
     falseLabelCode = [LabelDirective falseLabel]
-processStatement (WhileStmt e s) scope strings frameSize (loopLabel:breakLabel:labels) = (code, remainingLabels) where
+processStatement (WhileStmt e s) scope strings frameSize (loopLabel:breakLabel:labels) isMain = (code, remainingLabels) where
     code = loopLabelCode ++ conditionCode ++ testCode ++ falseJump ++ bodyCode ++ loopJump ++ breakLabelCode
     loopLabelCode = [LabelDirective loopLabel]
     conditionCode = processExpression e scope strings
     testCode = [TestInstruction (SourceRegister Accumulator) (DestinationRegister Accumulator)]
     falseJump = [JumpZeroInstruction breakLabel]
-    (bodyCode, remainingLabels) = processStatement s scope strings frameSize labels
+    (bodyCode, remainingLabels) = processStatement s scope strings frameSize labels isMain
     loopJump = [JumpInstruction loopLabel]
     breakLabelCode = [LabelDirective breakLabel]
-processStatement (ReturnStmt e) scope strings _ labels = (code, labels) where
+processStatement (ReturnStmt e) scope strings _ labels _ = (code, labels) where
     code = expressionCode ++ [stackRestoreInstruction, returnInstruction]
     expressionCode = processExpression e scope strings
     stackRestoreInstruction = MoveInstruction (SourceRegister SaveOne) (DestinationRegister StackPointer)
     returnInstruction = ReturnInstruction
-processStatement EmptyReturnStmt _ _ _ labels = (code, labels) where
-    code = [stackRestoreInstruction, returnInstruction]
+processStatement EmptyReturnStmt _ _ _ labels isMain = (code, labels) where
+    code = [stackRestoreInstruction] ++ exitStatusCode ++ [returnInstruction]
     stackRestoreInstruction = MoveInstruction (SourceRegister SaveOne) (DestinationRegister StackPointer)
+    exitStatusCode = if isMain
+        then [MoveInstruction (SourceImmediate 0) (DestinationRegister Accumulator)]
+        else []
     returnInstruction = ReturnInstruction
-processStatement (WriteStmt e) scope strings _ labels = (code, labels) where
+processStatement (WriteStmt e) scope strings _ labels _ = (code, labels) where
     code = [commentOne] ++ expressionCode ++ [commentTwo, loadFirstArgument, loadFormatString, clearAccumulator, callFunction, commentThree]
     commentOne = Comment "Beginning call to write()"
     expressionCode = processExpression e scope strings
@@ -269,7 +273,7 @@ processStatement (WriteStmt e) scope strings _ labels = (code, labels) where
     -- call printf
     callFunction = CallInstruction "printf"
     commentThree = Comment "Ending call to write()"
-processStatement WritelnStmt _ _ _ labels = (code, labels) where
+processStatement WritelnStmt _ _ _ labels _ = (code, labels) where
     code = [commentOne, loadFormatString, clearAccumulator, callFunction, commentTwo]
     commentOne = Comment "Beginning call to writeln()"
     loadFormatString = LoadAddressInstruction (SourceLabel ".newLineWrite") (DestinationRegister TempOne)
@@ -288,54 +292,75 @@ processExpression (SimpleExpression compExp _) scope strings = result where
     commentOne = Comment "Begin evaluating simple expression"
     compExpCode = processCompExp compExp scope strings
     commentTwo = Comment "End evaluating simple expression"
-processExpression (AssignmentExpression i m e _) scope strings = result where
+processExpression (AssignmentExpression i m e n) scope strings = result where
     result = assignmentCode
     expressionCode = processExpression e scope strings
     leftLookup = scope Map.! i
     assignmentCode = case m of
-        (RawAssignment) -> processRawAssignment expressionCode leftLookup
-        (DereferenceAssignment) -> processDereferenceAssignment expressionCode leftLookup
-        (ArrayAssignment index) -> processArrayAssignment expressionCode (processExpression index scope strings) leftLookup
+        (RawAssignment) -> processRawAssignment expressionCode leftLookup varSize
+        (DereferenceAssignment) -> processDereferenceAssignment expressionCode leftLookup varSize
+        (ArrayAssignment index) -> processArrayAssignment expressionCode (processExpression index scope strings) leftLookup varSize
+    varSize = sizeOfNode n
 
-processRawAssignment :: Code -> ScopeValue -> Code
-processRawAssignment expressionCode leftLookup = result where
+processRawAssignment :: Code -> ScopeValue -> Int -> Code
+processRawAssignment expressionCode leftLookup varSize = result where
     result = commentOne ++ expressionCode ++ commentTwo ++ assignmentCode ++ commentThree
     commentOne = [Comment "Evaluating expression on right side of raw assignment"]
     commentTwo = [Comment "Moving evaluated expression to left side of raw assignment"]
-    destination = case leftLookup of
-        (LocalVariable o) -> frameDestination o
-        (GlobalVariable l) -> DestinationLabel l
+    moveHalf = case leftLookup of
+        (LocalVariable o) -> MoveHalfInstruction (SourceHalfRegister AccumulatorHalf) (frameDestinationHalf o)
+        (GlobalVariable l) -> MoveHalfInstruction (SourceHalfRegister AccumulatorHalf) (DestinationHalfLabel l)
         (ArrayParameter _) -> error
             "An array has been encountered as an lvalue for a raw assignment in the code generation phase. This should never happen."
         (Function _) -> error
             "Function encountered as lvalue. This should never happen."
-    assignmentCode = [MoveInstruction (SourceRegister Accumulator) destination]
+    moveFull = case leftLookup of
+        (LocalVariable o) -> MoveInstruction (SourceRegister Accumulator) (frameDestination o)
+        (GlobalVariable l) -> MoveInstruction (SourceRegister Accumulator) (DestinationLabel l)
+        (ArrayParameter _) -> error
+            "An array has been encountered as an lvalue for a raw assignment in the code generation phase. This should never happen."
+        (Function _) -> error
+            "Function encountered as lvalue. This should never happen."
+    assignmentCode = case varSize of
+        4 -> [moveHalf]
+        8 -> [moveFull]
+        size -> error $
+            "Cannot store value of size " ++ show size ++ " at raw memory location."
     commentThree = [Comment "Raw assignment completed"]
 
-processDereferenceAssignment :: Code -> ScopeValue -> Code
-processDereferenceAssignment expressionCode leftLookup = result where
+processDereferenceAssignment :: Code -> ScopeValue -> Int -> Code
+processDereferenceAssignment expressionCode leftLookup varSize = result where
     result = commentOne ++ expressionCode ++ commentTwo ++ assignmentCode ++ commentThree
     commentOne = [Comment "Evaluating expression on right side of dereference assignment"]
     commentTwo = [Comment "Moving evaluated expression to left side of dereference assignment"]
-    addressCode = case leftLookup of
+    addressInstruction = case leftLookup of
         (LocalVariable o) -> MoveInstruction (frameSource o) (DestinationRegister TempOne)
         (GlobalVariable l) -> MoveInstruction (SourceLabel l) (DestinationRegister TempOne)
         (ArrayParameter _) -> error
             "An array has been encountered as an lvalue for a dereference assignment in the code generation phase. This should never happen."
         (Function _) -> error
             "Function encountered as lvalue. This should never happen."
-    assignmentCode = addressCode:[MoveInstruction (SourceRegister Accumulator) (DestinationOffset (Offset TempOne 0))]
+    moveInstruction = case varSize of
+        4 -> MoveHalfInstruction (SourceHalfRegister AccumulatorHalf) (DestinationHalfOffset (Offset TempOne 0))
+        8 -> MoveInstruction (SourceRegister Accumulator) (DestinationOffset (Offset TempOne 0))
+        size -> error $
+            "Cannot store value of size " ++ show size ++ " at dereferenced memory location."
+    assignmentCode = [addressInstruction, moveInstruction]
     commentThree = [Comment "Dereference assignment completed"]
 
-processArrayAssignment :: Code -> Code -> ScopeValue -> Code
-processArrayAssignment expressionCode indexCode leftLookup = result where
-    -- <indexCode> moves the index value of the array access into the accumulator
+processArrayAssignment :: Code -> Code -> ScopeValue -> Int -> Code
+processArrayAssignment expressionCode indexCode leftLookup elemSize = result where
     result = commentOne ++ loadAddressCode ++ [pushAddressInstruction] ++ commentTwo ++ expressionCode ++ commentThree ++ [popAddressInstruction, writeAddressInstruction] ++ commentFour
     commentOne = [Comment "Evaluating index of array assignment"]
+    -- <indexCode> moves the index value of the array access into the accumulator
+    offsetInstruction = case elemSize of
+        4 -> ShiftLeftInstruction (SourceImmediate 2) (DestinationRegister Accumulator)
+        8 -> ShiftLeftInstruction (SourceImmediate 3) (DestinationRegister Accumulator)
+        size -> error $
+            "Cannot calculate array offset for elements of size " ++ show size
+    -- <offsetCode> multiplies the index value by the size of each element
     commentTwo = [Comment "Evaluating expression on right side of array assignment"]
     commentThree = [Comment "Moving evaluated expression to left side of array assignment"]
-    offsetInstruction = ShiftLeftInstruction (SourceImmediate 3) (DestinationRegister Accumulator)
-    -- <offsetInstruction> multiplies the value of the index (in the accumulator) by eight (size of element)
     loadBaseInstruction = case leftLookup of
         (LocalVariable o) -> LoadAddressInstruction (frameSource o) (DestinationRegister TempOne)
         (GlobalVariable l) -> LoadAddressInstruction (SourceLabel l) (DestinationRegister TempOne)
@@ -348,7 +373,11 @@ processArrayAssignment expressionCode indexCode leftLookup = result where
     loadAddressCode = indexCode ++ [offsetInstruction, loadBaseInstruction, calculateAddressInstruction]
     pushAddressInstruction = PushInstruction (SourceRegister TempOne)
     popAddressInstruction = PopInstruction (DestinationRegister TempOne)
-    writeAddressInstruction = MoveInstruction (SourceRegister Accumulator) (DestinationOffset (Offset TempOne 0))
+    writeAddressInstruction = case elemSize of
+        4 -> MoveHalfInstruction (SourceHalfRegister AccumulatorHalf) (DestinationHalfOffset (Offset TempOne 0))
+        8 -> MoveInstruction (SourceRegister Accumulator) (DestinationOffset (Offset TempOne 0))
+        size -> error $
+            "Cannot store value of size " ++ show size ++ " at array memory location."
     commentFour = [Comment "Array assignment completed"]
 
 processCompExp :: CompExp -> Scope -> Strings -> Code
@@ -408,7 +437,7 @@ processF (ReferenceF (RawLValue i _) _) scope _ = result where
         (Function _) -> error
             "Function encountered as lvalue. This should never happen."
     result = [LoadAddressInstruction source (DestinationRegister Accumulator)]
-processF (ReferenceF (ArrayLValue i e _) _) scope strings = result where
+processF (ReferenceF (ArrayLValue i e _) n) scope strings = result where
     result = expressionCode ++ [loadBase, calculateOffset, calculateAddress]
     expressionCode = processExpression e scope strings
     -- <expressionCode> calculates the array index value and puts it into the accumulator
@@ -420,15 +449,25 @@ processF (ReferenceF (ArrayLValue i e _) _) scope strings = result where
             "An array has been encountered as a reference f in the code generation phase. This should never happen."
         (Function _) -> error
             "Function encountered as lvalue. This should never happen."
-    calculateOffset = ShiftLeftInstruction (SourceImmediate 3) (DestinationRegister Accumulator)
-    -- <calculateOffset> multiplies the index by eight to get the offset from the base address
+    calculateOffset = case sizeOfNode n of
+        4 -> ShiftLeftInstruction (SourceImmediate 2) (DestinationRegister Accumulator)
+        8 -> ShiftLeftInstruction (SourceImmediate 3) (DestinationRegister Accumulator)
+        size -> error $
+            "Cannot calculate array offset for elements of size " ++ show size
+    -- <calculateOffset> multiplies the index by the size of an array element to get the offset from the base address
     loadBase = LoadAddressInstruction source (DestinationRegister TempOne)
     -- <loadBase> moves the address of the base of the array into TempOne
     calculateAddress = AddInstruction (SourceRegister Accumulator) (DestinationRegister TempOne)
     -- <calculateAddress> subtracts the offset from the base address, returning the address of the array element
-processF (DereferenceF factor _) scope strings = factorCode ++ [moveResult] where
+processF (DereferenceF factor n) scope strings = factorCode ++ moveResult where
     factorCode = processFactor factor scope strings
-    moveResult = MoveInstruction (SourceOffset (Offset Accumulator 0)) (DestinationRegister Accumulator)
+    moveHalf = MoveHalfInstruction (SourceHalfOffset (Offset Accumulator 0)) (DestinationHalfRegister AccumulatorHalf)
+    moveFull = MoveInstruction (SourceOffset (Offset Accumulator 0)) (DestinationRegister Accumulator)
+    moveResult = case sizeOfNode n of
+        4 -> [moveHalf]
+        8 -> [moveFull]
+        size -> error $
+            "Cannot move dereferenced factor of size " ++ show size ++ " into accumulator register."
 processF (SimpleF factor _) scope strings = processFactor factor scope strings
 
 -- Take in a Factor, output Assembly Code that places the result of computing said
@@ -437,10 +476,17 @@ processFactor :: Factor -> Scope -> Strings -> Code
 processFactor (GroupedFactor e _) scope strings = processExpression e scope strings
 processFactor (FunCallFactor f _) scope strings = processFunCall f scope strings
 processFactor (ReadFactor _) _ _ = result where
-    result = [commentOne, decrementStack, loadReadString, loadCallAddress, callScanf, moveResult, incrementStack, commentTwo]
+    result = [commentOne, decrementStack] ++ alignStack ++ [loadReadString, loadCallAddress, callScanf, moveResult] ++ unalignStack ++ [incrementStack, commentTwo]
     commentOne = Comment "Beginning call to read()"
-    decrementStack = SubInstruction (SourceImmediate 40) (DestinationRegister StackPointer)
-    --  Decrement the stack pointer by 40 bytes.
+    decrementStack = SubInstruction (SourceImmediate 28) (DestinationRegister StackPointer)
+    --  Decrement the stack pointer by 28 bytes.
+    aligningComment = Comment "Attempting to align stack before call to scanf"
+    copyStackPointer = MoveInstruction (SourceRegister StackPointer) (DestinationRegister SaveTwo)
+    modStackPointer = AndInstruction (SourceImmediate 15) (DestinationRegister SaveTwo)
+    moveStackPointerDown = SubInstruction (SourceRegister SaveTwo) (DestinationRegister StackPointer)
+    alignedComment = Comment "Stack should now be aligned."
+    alignStack = [aligningComment, copyStackPointer, modStackPointer, moveStackPointerDown, alignedComment]
+    --  Align the stack on a 16-byte boundary
     loadReadString = LoadAddressInstruction (SourceLabel ".integerRead") (DestinationRegister TempOne)
     --  Put $.integerRead into TempOne
     loadCallAddress = LoadAddressInstruction (SourceOffset (Offset StackPointer 24)) (DestinationRegister TempTwo)
@@ -449,20 +495,36 @@ processFactor (ReadFactor _) _ _ = result where
     --  Call scanf
     moveResult = MoveHalfInstruction (SourceHalfOffset (Offset StackPointer 24)) (DestinationHalfRegister AccumulatorHalf)
     --  Move 24(%rsp) into Accumulator.
-    incrementStack = AddInstruction (SourceImmediate 40) (DestinationRegister StackPointer)
-    --  Increment the stack pointer by 40 bytes
+    unaligningComment = Comment "Attempting to undo stack alignment after call to scanf"
+    moveStackPointerUp = AddInstruction (SourceRegister SaveTwo) (DestinationRegister StackPointer)
+    unalignedComment = Comment "Stack alignment should now be undone."
+    unalignStack = [unaligningComment, moveStackPointerUp, unalignedComment]
+    --  Undo previous stack alignment efforts (the SaveTwo register should be preserved across the call to scanf)
+    incrementStack = AddInstruction (SourceImmediate 28) (DestinationRegister StackPointer)
+    --  Increment the stack pointer by 28 bytes
     commentTwo = Comment "Ending call to read()"
-processFactor (DereferenceFactor i _) scope _ = [result] where
+processFactor (DereferenceFactor i n) scope _ = result where
     varLookup = scope Map.! i
     -- <varLookup> should contain the value of <i> in the current scope
-    source = case varLookup of
-        (LocalVariable o) -> frameSource o
-        (GlobalVariable l) ->  SourceLabel l
+    moveHalf = case varLookup of
+        (LocalVariable o) -> MoveHalfInstruction (frameSourceHalf o) (DestinationHalfRegister AccumulatorHalf)
+        (GlobalVariable l) -> MoveHalfInstruction (SourceHalfLabel l) (DestinationHalfRegister AccumulatorHalf)
         (ArrayParameter _) -> error
             "An array has been encountered as a dereference factor in the code generation phase. This should never happen."
         (Function _) -> error
             "A function call has been encountered as a variable in the code generation phase. This should never happen."
-    result = MoveInstruction source (DestinationRegister Accumulator)
+    moveFull = case varLookup of
+        (LocalVariable o) -> MoveInstruction (frameSource o) (DestinationRegister Accumulator)
+        (GlobalVariable l) -> MoveInstruction (SourceLabel l) (DestinationRegister Accumulator)
+        (ArrayParameter _) -> error
+            "An array has been encountered as a dereference factor in the code generation phase. This should never happen."
+        (Function _) -> error
+            "A function call has been encountered as a variable in the code generation phase. This should never happen."
+    result = case sizeOfNode n of
+        4 -> [moveHalf]
+        8 -> [moveFull]
+        size -> error $
+            "Cannot move dereferenced variable " ++ i ++ " of size " ++ show size ++ " into accumulator register."
 processFactor (VarFactor i (_, ArrayNode)) scope _ = [result] where
     varLookup = scope Map.! i
     result = case varLookup of
@@ -471,20 +533,37 @@ processFactor (VarFactor i (_, ArrayNode)) scope _ = [result] where
         (ArrayParameter o) -> MoveInstruction (frameSource o) (DestinationRegister Accumulator)
         (Function _) -> error
             "A function call has been encountered as an array variable factor in the code generation phase. This should never happen."
-processFactor (VarFactor i _) scope _ = [result] where
+processFactor (VarFactor i n) scope _ = result where
     varLookup = scope Map.! i
-    result = case varLookup of
+    moveHalf = case varLookup of
+        (LocalVariable o) -> MoveHalfInstruction (frameSourceHalf o) (DestinationHalfRegister AccumulatorHalf)
+        (GlobalVariable l) -> MoveHalfInstruction (SourceHalfLabel l) (DestinationHalfRegister AccumulatorHalf)
+        (ArrayParameter _) -> error
+            "An array has been encountered as a non-array variable factor in the code generation phase. This should never happen."
+        (Function _) -> error
+            "A function call has been encountered as a variable in the code generation phase. This should never happen."
+    moveFull = case varLookup of
         (LocalVariable o) -> MoveInstruction (frameSource o) (DestinationRegister Accumulator)
         (GlobalVariable l) -> MoveInstruction (SourceLabel l) (DestinationRegister Accumulator)
         (ArrayParameter _) -> error
             "An array has been encountered as a non-array variable factor in the code generation phase. This should never happen."
         (Function _) -> error
             "A function call has been encountered as a variable in the code generation phase. This should never happen."
+    result = case sizeOfNode n of
+        4 -> [moveHalf]
+        8 -> [moveFull]
+        size -> error $
+            "Cannot move variable " ++ i ++ " of size " ++ show size ++ " into accumulator register."
 processFactor (ArrayReferenceFactor i e _) scope strings = result where
     result = indexValue ++ [indexShift, base, calculateAddress, moveResult]
     indexValue = processExpression e scope strings
     -- <indexValue> evalutaes <e> and leaves its value in the accumulator register
-    indexShift = ShiftLeftInstruction (SourceImmediate 3) (DestinationRegister Accumulator)
+    indexShift = case sizeOfNode $ nodeType e of
+        4 -> ShiftLeftInstruction (SourceImmediate 2) (DestinationRegister Accumulator)
+        8 -> ShiftLeftInstruction (SourceImmediate 3) (DestinationRegister Accumulator)
+        -- TODO: Get rid of this ridiculous copout
+        size -> error $
+            "Cannot calculate array offset for elements of size " ++ show size
     -- <indexShift> shifts the index left by three bits, to get the offset from the base
     baseLookup = scope Map.! i
     base = case baseLookup of
@@ -499,7 +578,7 @@ processFactor (ArrayReferenceFactor i e _) scope strings = result where
     moveResult = MoveInstruction (SourceOffset (Offset TempOne 0)) (DestinationRegister Accumulator)
     -- <moveResult> loads the memory location referenced by TempOne into the accumulator
 processFactor (NumberFactor n _) _ _ = [result] where
-    result = MoveInstruction (SourceImmediate n) (DestinationRegister Accumulator)
+    result = MoveHalfInstruction (SourceHalfImmediate n) (DestinationHalfRegister AccumulatorHalf)
 processFactor (StringFactor s _) _ strings = [result] where
     label = strings Map.! s
     result = LoadAddressInstruction (SourceLabel label) (DestinationRegister Accumulator)
@@ -511,16 +590,28 @@ processFactor (StringFactor s _) _ strings = [result] where
 -- will be found in eax or rax.
 processFunCall :: FunCall -> Scope -> Strings -> Code
 processFunCall (FunCall i es _) scope strings = result where
-    result = pushFramePointerCode ++ argsCode ++ functionCall ++ popArgsCode ++ popFramePointerCode
-    pushArgCode = [PushInstruction (SourceRegister Accumulator)]
-    processArg e = processExpression e scope strings ++ pushArgCode
-    argsCode = concatMap processArg $ reverse es
+    result = pushFramePointerCode ++ argsCode ++ decrementStackCode ++ functionCall ++ restoreStackCode ++ popFramePointerCode
+    -- pushArgCode n = case sizeOfNode n of
+    --     4 -> [PushHalfInstruction (SourceHalfRegister AccumulatorHalf)]
+    --     8 -> [PushInstruction (SourceRegister Accumulator)]
+    --     size -> error $
+    --         "Cannot push argument of size " ++ show size ++ " to stack."
+    -- processArg e = processExpression e scope strings ++ pushArgCode (nodeType e)
+    -- argsCode = concatMap processArg $ reverse es
+    pushExpression (o, c) e = let argCode = processExpression e scope strings in
+        case sizeOfNode $ nodeType e of
+            4 -> (o - 4, c ++ argCode ++ [MoveHalfInstruction (SourceHalfRegister AccumulatorHalf) (DestinationHalfOffset (Offset StackPointer (o - 4)))])
+            8 -> (o - 8, c ++ argCode ++ [MoveInstruction (SourceRegister Accumulator) (DestinationOffset (Offset StackPointer (o - 8)))])
+            size -> error $
+                "Cannot write argument to function " ++ i ++ " of size " ++ show size ++ " to stack."
+    (argsOffset, argsCode) = foldl pushExpression (0, []) (reverse es)
+    argsSize = negate argsOffset
+    decrementStackCode = [SubInstruction (SourceImmediate argsSize) (DestinationRegister StackPointer)]
     pushFramePointerCode = [PushInstruction (SourceRegister SaveOne)]
     functionCall = [CallInstruction i]
     popFramePointerCode = [PopInstruction (DestinationRegister SaveOne)]
-    argsStackSize = 8 * length es
-    popArgsCode = if argsStackSize > 0
-        then [AddInstruction (SourceImmediate argsStackSize) (DestinationRegister StackPointer)]
+    restoreStackCode = if argsSize > 0
+        then [AddInstruction (SourceImmediate argsSize) (DestinationRegister StackPointer)]
         else []
 
 --------------------------------------------------------------------------------
@@ -533,3 +624,19 @@ frameSource = SourceOffset . Offset SaveOne
 
 frameDestination :: Int -> Destination
 frameDestination = DestinationOffset . Offset SaveOne
+
+frameSourceHalf :: Int -> SourceHalf
+frameSourceHalf = SourceHalfOffset . Offset SaveOne
+
+frameDestinationHalf :: Int -> DestinationHalf
+frameDestinationHalf = DestinationHalfOffset . Offset SaveOne
+
+-- Size required to store the given node type (in bytes)
+sizeOfNode :: NodeType -> Int
+sizeOfNode (IntNode, RawNode) = 4
+sizeOfNode _ = 8
+
+sizeOfVar :: VarType -> Int
+sizeOfVar (IntVar, ArrayVar n) = 4 * n
+sizeOfVar (StringVar, ArrayVar n) = 8 * n
+sizeOfVar v = sizeOfNode $ varNodeType v

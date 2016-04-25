@@ -357,12 +357,12 @@ processFactor s (Grammar.DereferenceFactor i line) =
             FunDecType _ -> error $
                 "Line " ++ show line ++ ": cannot dereference function " ++ i
         ptr = case var of
-            (r, PointerVar) -> r
+            (r, PointerVar) -> (r, RawVar)
             (_, RawVar) -> error $
                 "Line " ++ show line ++ ": cannot dereference raw variable " ++ i
             (_, (ArrayVar _)) -> error $
                 "Line " ++ show line ++ ": cannot dereference array variable " ++ i
-        loggedNode = logAssignment (varNodeType (ptr, PointerVar)) "Factor" line
+        loggedNode = logAssignment (varNodeType ptr) "Factor" line
 processFactor s (Grammar.VarFactor i line) =
     VarFactor i loggedNode where
         dec = Types.lookup s i line

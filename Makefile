@@ -1,17 +1,15 @@
 HC=ghc
 HCFLAGS=-O2 -odir bin/objects -hidir bin/interfaces
 
-.PHONY: bpl
-
 all: bpl
 
-bpl: bpl.hs
+bpl: bpl.hs Compiler.hs Analyzer.hs Parser.hs Scanner.hs
 	$(HC) bpl.hs $(HCFLAGS)
 
 Compiler: Compiler.hs
 	$(HC) Compiler.hs $(HCFLAGS)
 
-AnalyzerTest: AnalyzerTest.hs
+AnalyzerTest: AnalyzerTest.hs Analyzer.hs Parser.hs Scanner.hs
 	$(HC) AnalyzerTest.hs $(HCFLAGS)
 
 Analyzer: Analyzer.hs
@@ -20,7 +18,7 @@ Analyzer: Analyzer.hs
 Types: Types.hs
 	$(HC) Types.hs $(HCFLAGS)
 
-ParserTest: ParserTest.hs
+ParserTest: ParserTest.hs Parser.hs Scanner.hs
 	$(HC) ParserTest.hs $(HCFLAGS)
 
 Parser: Parser.hs
