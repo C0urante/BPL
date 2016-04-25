@@ -25,4 +25,5 @@ void main(void) {
         write(sarr[i]);
         i = i + 1;
     }
+    writeln();
 }
