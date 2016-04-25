@@ -595,7 +595,7 @@ extractLValueFromExpression s
     (Grammar.SimpleF f _) _) _) _) _) = processLValue s f
 extractLValueFromExpression s (Grammar.AssignmentExpression _ e _) = result where
     result = extractLValueFromExpression s e
-extractLValueFromExpression _ line = error $
+extractLValueFromExpression _ (Grammar.SimpleExpression _ line) = error $
     "Line " ++ show line ++ ": cannot reference non-lvalue"
 
 extractLineFromFactor :: Grammar.Factor -> LineNumber
