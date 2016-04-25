@@ -1,0 +1,8 @@
+This is a global string! 
+This is a local string! 
+This is a dereferenced local string pointer! 
+This is a dereferenced global string pointer! 
+This is the first element of a local string array! 
+This is the second element of a local string array! 
+This is the first element of a global string array! 
+This is the second element of a global string array! 

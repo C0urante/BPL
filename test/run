@@ -1,0 +1,103 @@
+#!/bin/bash
+
+BPLDIR="${HOME}/School/CS331"
+MSGPREFIX="\t${BOLD}"
+
+function sucmsg {
+    echo -e "${GREEN}${MSGPREFIX}[BPL TEST: ${filebase:-GENERAL}] $@${RESET}" 1>&2
+}
+
+function genmsg {
+    echo -e "${MSGPREFIX}[BPL TEST: ${filebase:-GENERAL}] $@${RESET}" 1>&2
+}
+
+function warnmsg {
+    echo -e "${YELLOW}${MSGPREFIX}[BPL TEST: ${filebase:-GENERAL}] $@${RESET}" 1>&2
+}
+
+function errmsg {
+    echo -e "${RED}${MSGPREFIX}[BPL TEST: ${filebase:-GENERAL}] $@${RESET}" 1>&2
+}
+
+if [ $# -eq 0 ]; then
+    errmsg "Please supply at least one file to test."
+    exit 1
+fi
+
+echo
+genmsg "Rebuilding compiler..."
+make -C "${BPLDIR}"
+if [ $? -ne 0 ]; then
+    errmsg "Failed to rebuild compiler."
+    exit 1
+fi
+
+TOTAL=$#
+PASSES=0
+
+while [ $# -gt 0 ]; do
+    echo
+    filebase="$1"
+    shift
+
+    srcfile="${BPLDIR}/test/src/${filebase}.bpl"
+    localasmfile="${filebase}.s"
+    genmsg "Compiling ${srcfile}..."
+    "${BPLDIR}/bpl" "${srcfile}"
+    if [ $? -ne 0 ]; then
+        rm "${localasmfile}"
+        errmsg "Compilation failed."
+        continue
+    fi
+
+    asmfile="${BPLDIR}/test/asm/${localasmfile}"
+    # Have to do this move since the compiler currently doesn't support output filenames
+    mv "${localasmfile}" "${asmfile}"
+    genmsg "Assembling ${asmfile}..."
+    binfile="${BPLDIR}/test/bin/${filebase}"
+    gcc -o "${binfile}" -g "${asmfile}"
+    if [ $? -ne 0 ]; then
+        errmsg "Assembly failed."
+        continue
+    fi
+
+    infile="${BPLDIR}/test/in/${filebase}"
+    outfile="${BPLDIR}/test/out/${filebase}"
+    logfile="${BPLDIR}/test/log/${filebase}"
+    genmsg "Running ${binfile}..."
+    if [ -f "${infile}" ]; then
+        valgrind "${binfile}" < "${infile}" 2> "${logfile}" | tee "${outfile}"
+    else
+        valgrind "${binfile}" 2> "${logfile}" | tee "${outfile}"
+    fi
+    if [ "${PIPESTATUS[0]}" -ne 0 ]; then
+        echo # Program may not output a newline as its last character
+        errmsg "Testing with valgrind failed. Error log can be found in ${logfile}."
+        continue
+    fi
+    echo # Program may not output a newline as its last character
+
+    solfile="${BPLDIR}/test/sol/${filebase}"
+    if [ -f "${solfile}" ]; then
+        genmsg "Comparing output to expected output..."
+        diff "${outfile}" "${solfile}"
+        if [ $? -eq 0 ]; then
+            sucmsg "Test passed!"
+        else
+            errmsg "Output did not match expected output."
+            continue
+        fi
+    else
+        warnmsg "No file for expected output found."
+        sucmsg "Test passed!"
+    fi
+    PASSES=$((PASSES + 1))
+done
+
+echo
+
+if [ "${TOTAL}" -eq 1 ]; then
+    genmsg "Testing complete."
+else
+    genmsg "Testing complete, with ${PASSES}/${TOTAL} tests passing."
+fi
