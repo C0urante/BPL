@@ -1,44 +1,45 @@
-HC=ghc
-MAINDIR=/home/chris/School/CS331
-SRCDIR=$(MAINDIR)/src
-BINDIR=$(MAINDIR)/bin
-TESTDIR=$(MAINDIR)/test
-HCFLAGS=-O2 -odir $(BINDIR)/objects -hidir $(BINDIR)/interfaces -i$(SRCDIR)
+HC = ghc
+MAINDIR = /home/chris/School/CS331
+SRCDIR = $(MAINDIR)/src
+BINDIR = $(MAINDIR)/bin
+TESTDIR = $(MAINDIR)/test
+HCFLAGS = -O2 -odir $(BINDIR)/objects -hidir $(BINDIR)/interfaces -i$(SRCDIR)
+OUTFLAG = -o $(MAINDIR)/$@
 
 all: bpl
 
 bpl: $(SRCDIR)/bpl.hs $(SRCDIR)/Compiler.hs $(SRCDIR)/Analyzer.hs $(SRCDIR)/Parser.hs $(SRCDIR)/Scanner.hs
-	$(HC) $(SRCDIR)/bpl.hs $(HCFLAGS) -o $(MAINDIR)/bpl
+	$(HC) $(SRCDIR)/bpl.hs $(HCFLAGS) $(OUTFLAG)
 
 Compiler: $(SRCDIR)/Compiler.hs
-	$(HC) $(SRCDIR)/Compiler.hs $(HCFLAGS) -o $(MAINDIR)/Compiler
+	$(HC) $(SRCDIR)/Compiler.hs $(HCFLAGS) $(OUTFLAG)
 
-AnalyzerTest: $(SRCDIR)/AnalyzerTest.hs $(SRCDIR)/Analyzer.hs Parser.hs Scanner.hs
-	$(HC) $(SRCDIR)/AnalyzerTest.hs $(HCFLAGS) -o $(MAINDIR)/AnalyzerTest
+AnalyzerTest: $(SRCDIR)/AnalyzerTest.hs $(SRCDIR)/Analyzer.hs $(SRCDIR)/Parser.hs $(SRCDIR)/Scanner.hs
+	$(HC) $(SRCDIR)/AnalyzerTest.hs $(HCFLAGS) $(OUTFLAG)
 
 Analyzer: $(SRCDIR)/Analyzer.hs
-	$(HC) $(SRCDIR)/Analyzer.hs $(HCFLAGS) -o $(MAINDIR)/Analyzer
+	$(HC) $(SRCDIR)/Analyzer.hs $(HCFLAGS)
 
 Types: $(SRCDIR)/Types.hs
-	$(HC) $(SRCDIR)/Types.hs $(HCFLAGS) -o $(MAINDIR)/Types
+	$(HC) $(SRCDIR)/Types.hs $(HCFLAGS)
 
 ParserTest: $(SRCDIR)/ParserTest.hs $(SRCDIR)/Parser.hs $(SRCDIR)/Scanner.hs
-	$(HC) $(SRCDIR)/ParserTest.hs $(HCFLAGS) -o $(MAINDIR)/ParserTest
+	$(HC) $(SRCDIR)/ParserTest.hs $(HCFLAGS) $(OUTFLAG)
 
 Parser: $(SRCDIR)/Parser.hs
-	$(HC) $(SRCDIR)/Parser.hs $(HCFLAGS) -o $(MAINDIR)/Parser
+	$(HC) $(SRCDIR)/Parser.hs $(HCFLAGS)
 
 Grammar: $(SRCDIR)/Grammar.hs
-	$(HC) $(SRCDIR)/Grammar.hs $(HCFLAGS) -o $(MAINDIR)/Grammar
+	$(HC) $(SRCDIR)/Grammar.hs $(HCFLAGS)
 
 ScannerTest: $(SRCDIR)/ScannerTest.hs $(SRCDIR)/Scanner.hs $(SRCDIR)/Token.hs
-	$(HC) $(SRCDIR)/ScannerTest $(HCFLAGS) -o $(MAINDIR)/ScannerTest
+	$(HC) $(SRCDIR)/ScannerTest $(HCFLAGS) $(OUTFLAG)
 
 Scanner: $(SRCDIR)/Scanner.hs $(SRCDIR)/Token.hs
-	$(HC) $(SRCDIR)/Scanner.hs $(HCFLAGS) -o $(MAINDIR)/Scanner
+	$(HC) $(SRCDIR)/Scanner.hs $(HCFLAGS)
 
 Token: $(SRCDIR)/Token.hs
-	$(HC) $(SRCDIR)/Token.hs $(HCFLAGS) -o $(MAINDIR)/Token
+	$(HC) $(SRCDIR)/Token.hs $(HCFLAGS)
 
 clean:
 	rm -f $(MAINDIR)/Token $(MAINDIR)/Scanner $(MAINDIR)/ScannerTest
