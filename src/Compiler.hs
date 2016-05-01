@@ -2,8 +2,9 @@ module Compiler where
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import Data.List (partition)
+import Data.List (partition, find)
 import Types hiding (Scope)
+import Analyzer (statementHasReturn)
 import Instruction
 
 type Variable = (Identifier, VarType)
@@ -24,10 +25,39 @@ type Code = [AssemblyLine]
 
 compile :: Program -> Code
 compile p = result where
-    (readOnlyCode, strings) = readOnlySection p
-    (dataCode, scope) = dataSection p
-    textCode = textSection p scope strings
+    verifiedProgram = returnVerifiedProgram $ mainVerifiedProgram p
+    (readOnlyCode, strings) = readOnlySection verifiedProgram
+    (dataCode, scope) = dataSection verifiedProgram
+    textCode = textSection verifiedProgram scope strings
     result = readOnlyCode ++ dataCode ++ textCode
+
+mainVerifiedProgram :: Program -> Program
+mainVerifiedProgram (Program ds) = verifiedResult where
+    mainDec = case find ((== "main") . extractDecName) ds of
+        (Just d) -> d
+        (Nothing) -> error "Program must contain a main function"
+    extractDecName (FunDec i _ _ _) = i
+    extractDecName (VarDec i _) = i
+    mainFun = case mainDec of
+        (FunDec i r ps c) -> (i, r, ps, c)
+        (VarDec _ _) -> error "Global identifier 'main' must correspond to a function"
+    verifiedResult = case mainFun of
+        (_, VoidFun, [], _) -> (Program ds)
+        (_, _, [], _) -> error "Function 'main' must have type void"
+        (_, _, _, _) -> error "Function 'main' cannot take any arguments"
+
+returnVerifiedProgram :: Program -> Program
+returnVerifiedProgram (Program ds) = verifiedResult where
+    verifiedResult = Program $ map verifyDeclaration ds
+    verifyDeclaration d = case d of
+        (VarDec _ _) -> d
+        (FunDec i VoidFun ps (CompoundStmt lds ss)) -> if statementHasReturn (CompoundStmtStmt (CompoundStmt lds ss))
+            then d
+            else FunDec i VoidFun ps (CompoundStmt lds (ss ++ [EmptyReturnStmt]))
+        (FunDec i _ _ c) -> if statementHasReturn (CompoundStmtStmt c)
+            then d
+            else error $
+                "Function '" ++ i ++ "' potentially lacks a return statement."
 
 labelStream :: String -> [Label]
 labelStream prefix = map (((".L" ++ prefix) ++) . show) ([0..] :: [Int])

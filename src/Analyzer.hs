@@ -40,25 +40,26 @@ splitScan f base l = (single, reverse list) where
         (next, result) = f b x
 
 processProgram :: Grammar.Program -> Program
-processProgram (Grammar.Program (Grammar.DeclarationList ds _) _) = verifiedResult where
-    (s, tds) = splitScan programHelper emptyScope ds
-    verifiedResult = mainVerifiedProgram s tds
+processProgram (Grammar.Program (Grammar.DeclarationList ds _) _) = result where
+    (_, ds') = splitScan programHelper emptyScope ds
+    result = Program ds'
+    -- verifiedResult = mainVerifiedProgram s tds
 
-mainVerifiedProgram :: Scope -> [Declaration] -> Program
-mainVerifiedProgram s tds = result where
-    mainDec = if Types.contains s "main"
-        then Types.lookup s "main" 1
-        else error "Programs must contain a main function"
-    mainFun = case mainDec of
-        VarDecType _ -> error "Declaration for main must correspond to a function"
-        FunDecType f -> f
-    result = if funReturn mainFun == VoidFun
-        then
-            if null $ funArgs mainFun
-                then Program tds
-                else error "Main function cannot take any arguments"
-        else
-            error "Main function must have type void"
+-- mainVerifiedProgram :: Scope -> [Declaration] -> Program
+-- mainVerifiedProgram s tds = result where
+--     mainDec = if Types.contains s "main"
+--         then Types.lookup s "main" 1
+--         else error "Programs must contain a main function"
+--     mainFun = case mainDec of
+--         VarDecType _ -> error "Declaration for main must correspond to a function"
+--         FunDecType f -> f
+--     result = if funReturn mainFun == VoidFun
+--         then
+--             if null $ funArgs mainFun
+--                 then Program tds
+--                 else error "Main function cannot take any arguments"
+--         else
+--             error "Main function must have type void"
 
 programHelper :: Scope -> Grammar.Declaration -> (Scope, Declaration)
 programHelper s d = case d of
@@ -73,31 +74,32 @@ programHelper s d = case d of
 processDeclaration :: Scope -> Grammar.Declaration -> Declaration
 processDeclaration _ (Grammar.VarDecDeclaration v _) = result where
     result = VarDec (extractVarName v) (extractVarType v)
-processDeclaration s (Grammar.FunDecDeclaration (Grammar.FunDec t i p c l) _) = verifiedResult where
+processDeclaration s (Grammar.FunDecDeclaration (Grammar.FunDec t i p c l) _) = result where
     params = processParams p
     newScope = addParamsToScope s (Grammar.FunDec t i p c l)
     returnType = extractFunReturnType t
     body = processCompoundStmt newScope (funNodeType (returnType, [])) c
-    verifiedResult = returnVerifiedFunction i returnType params body
+    result = FunDec i returnType params body
+    -- verifiedResult = returnVerifiedFunction i returnType params body
 
---  If the function is non-void, guarantee (erring on the side of caution) that
--- it contains a return statement, and return the resulting FunDec. Otherwise,
--- check to see if the function contains a return statement, and if not, simply
--- append one to the end of its compound statement's statement list.
-returnVerifiedFunction :: Identifier -> FunReturnType -> [(Identifier, VarType)] -> CompoundStmt -> Declaration
-returnVerifiedFunction i r ps c = verifiedResult where
-    result = FunDec i r ps c
-    safeVoidResult = FunDec i r ps safeVoidBody
-    safeVoidBody = case c of
-        (CompoundStmt lds ss) -> CompoundStmt lds (ss ++ [EmptyReturnStmt])
-    verifiedResult = case r of
-        VoidFun -> if statementHasReturn (CompoundStmtStmt c)
-            then result
-            else safeVoidResult
-        _ -> if statementHasReturn (CompoundStmtStmt c)
-            then result
-            else error $
-                "Non-void function " ++ i ++ " may fail to execute a return statement"
+-- --  If the function is non-void, guarantee (erring on the side of caution) that
+-- -- it contains a return statement, and return the resulting FunDec. Otherwise,
+-- -- check to see if the function contains a return statement, and if not, simply
+-- -- append one to the end of its compound statement's statement list.
+-- returnVerifiedFunction :: Identifier -> FunReturnType -> [(Identifier, VarType)] -> CompoundStmt -> Declaration
+-- returnVerifiedFunction i r ps c = verifiedResult where
+--     result = FunDec i r ps c
+--     safeVoidResult = FunDec i r ps safeVoidBody
+--     safeVoidBody = case c of
+--         (CompoundStmt lds ss) -> CompoundStmt lds (ss ++ [EmptyReturnStmt])
+--     verifiedResult = case r of
+--         VoidFun -> if statementHasReturn (CompoundStmtStmt c)
+--             then result
+--             else safeVoidResult
+--         _ -> if statementHasReturn (CompoundStmtStmt c)
+--             then result
+--             else error $
+--                 "Non-void function " ++ i ++ " may fail to execute a return statement"
 
 statementHasReturn :: Statement -> Bool
 statementHasReturn (EmptyReturnStmt) = True
