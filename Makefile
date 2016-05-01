@@ -8,11 +8,17 @@ OUTFLAG = -o $(MAINDIR)/$@
 
 all: bpl
 
-bpl: $(SRCDIR)/bpl.hs $(SRCDIR)/Compiler.hs $(SRCDIR)/Analyzer.hs $(SRCDIR)/Parser.hs $(SRCDIR)/Scanner.hs
+bpl: $(SRCDIR)/bpl.hs $(SRCDIR)/Optimizer.hs $(SRCDIR)/Compiler.hs $(SRCDIR)/Analyzer.hs $(SRCDIR)/Parser.hs $(SRCDIR)/Scanner.hs
 	$(HC) $(SRCDIR)/bpl.hs $(HCFLAGS) $(OUTFLAG)
 
 Compiler: $(SRCDIR)/Compiler.hs
 	$(HC) $(SRCDIR)/Compiler.hs $(HCFLAGS) $(OUTFLAG)
+
+OptimizerTest: $(SRCDIR)/OptimizerTest.hs $(SRCDIR)/Optimizer.hs $(SRCDIR)/Analyzer.hs $(SRCDIR)/Parser.hs $(SRCDIR)/Scanner.hs
+	$(HC) $(SRCDIR)/OptimizerTest.hs $(HCFLAGS) $(OUTFLAG)
+
+Optimizer: $(SRCDIR)/Optimizer.hs
+	$(HC) $(SRCDIR)/Optimizer.hs $(HCFLAGS) $(OUTFLAG)
 
 AnalyzerTest: $(SRCDIR)/AnalyzerTest.hs $(SRCDIR)/Analyzer.hs $(SRCDIR)/Parser.hs $(SRCDIR)/Scanner.hs
 	$(HC) $(SRCDIR)/AnalyzerTest.hs $(HCFLAGS) $(OUTFLAG)

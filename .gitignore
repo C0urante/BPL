@@ -5,10 +5,14 @@ Token
 Scanner
 Grammar
 Parser
+Types
+Analyzer
+Optimizer
 Compiler
 ScannerTest
 ParserTest
 AnalyzerTest
+OptimizerTest
 bpl
 test/asm/*
 test/bin/*
