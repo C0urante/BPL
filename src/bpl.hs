@@ -6,10 +6,11 @@ import System.IO
 import Scanner (tokenize)
 import Parser (parseProgram)
 import Analyzer (processProgram)
+import Optimizer (optimize)
 import Compiler (compile)
 
 sourceToAssembly :: String -> String
-sourceToAssembly = unlines . map show . compile . processProgram . parseProgram . tokenize
+sourceToAssembly = unlines . map show . compile . optimize . processProgram . parseProgram . tokenize
 
 assemblyFilename :: String -> String
 assemblyFilename s = if extension == ".bpl"
