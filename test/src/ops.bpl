@@ -11,7 +11,7 @@ int mod(int m, int o, int d, int t, int e, int s) {
 }
 
 int div(int x, int y, int z, int x1, int x2) {
-    return x / y / z / (x1/x2);
+    return x / y / z / (x1 / x2);
 }
 
 int mul(int x, int y, int z, int x1, int x2) {
@@ -31,18 +31,30 @@ void hello(void) {
     writeln();
 }
 
-int orderTest(void) {
-    int x;
-    int y;
-    int z;
-    int T_T;
-    y = (z = T_T = 5 + 4 * 3 < ---*x);
+void main(void) {
     hello();
-    return y * 3 + 4;
-    ;
-    ;;;;
-    ;;;;;;;;;;
-    ;;;;;;;;;;;;;;;;;;;;;;;;;
-}
 
-void main(void){}
+    write("69 - 32 - (-7) - (45 - 17) =");
+    write(sub(69, 32, -7, 45, 17));
+    writeln();
+
+    write("(-100) + 50 + (-25) + (12 + (-6)) =");
+    write(add(-100, 50, -25, 12, -6));
+    writeln();
+
+    write("(400 % 300 % 200) % (50 % 29 % 39 % 50) =");
+    write(mod(400, 300, 200, 50, 29, 39));
+    writeln();
+
+    write("4200 / (-13) / 17 / ((-60) / 40) =");
+    write(div(4200, -13, 17, -60, 40));
+    writeln();
+
+    write("2 * (-3) * 5 * ((-7) * 69) =");
+    write(mul(2, -3, 5, -7, 69));
+    writeln();
+
+    write("mulSub(1, 2, 3, 5, 8, -13) =");
+    write(mulSub(1, 2, 3, 5, 8, -13));
+    writeln();
+}
