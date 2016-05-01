@@ -4,6 +4,7 @@ import Types
 import Analyzer (statementHasReturn)
 
 import Data.Maybe
+import Data.Int (Int32)
 
 optimize :: Program -> Program
 optimize = filterLiveCode . foldConstants
@@ -380,8 +381,8 @@ rawIntNode :: NodeType
 rawIntNode = (IntNode, RawNode)
 
 class ConstantNode a where
-    extractConstant :: a -> Maybe Int
-    toConstant :: Int -> a
+    extractConstant :: a -> Maybe Int32
+    toConstant :: Int32 -> a
 
 instance ConstantNode Expression where
     extractConstant e = case e of

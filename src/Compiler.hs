@@ -677,6 +677,6 @@ sizeOfNode (IntNode, RawNode) = 4
 sizeOfNode _ = 8
 
 sizeOfVar :: VarType -> Int
-sizeOfVar (IntVar, ArrayVar n) = 4 * n
-sizeOfVar (StringVar, ArrayVar n) = 8 * n
+sizeOfVar (IntVar, ArrayVar n) = 4 * (fromInteger (toInteger n) :: Int)
+sizeOfVar (StringVar, ArrayVar n) = 8 * (fromInteger (toInteger n) :: Int)
 sizeOfVar v = sizeOfNode $ varNodeType v

@@ -1,7 +1,10 @@
 module Instruction where
 
+import Data.Int (Int32)
+
 type Symbol = String
 type Label =  String
+
 
 data Register = Accumulator
               | StackPointer
@@ -85,7 +88,7 @@ data Source = SourceRegister Register
               deriving (Eq)
 data SourceHalf = SourceHalfRegister RegisterHalf
                 | SourceHalfOffset Offset
-                | SourceHalfImmediate Int
+                | SourceHalfImmediate Int32
                 | SourceHalfLabel Label
                   deriving (Eq)
 

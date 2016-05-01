@@ -7,6 +7,8 @@
 
 module Grammar where
 
+import Data.Int (Int32)
+
 -- 1. PROGRAM -> DECLARATION_LIST
 -- 2. DECLARATION_LIST -> DECLARATION_LIST DECLARATION | DECLARATION
 -- 3. DECLARATION -> VAR_DEC | FUN_DEC
@@ -63,7 +65,7 @@ type LineNumber = Int
 data VarDecMetaType =
     RawVarDec |
     PointerVarDec |
-    ArrayVarDec Int
+    ArrayVarDec Int32
     deriving (Eq, Show)
 data ParamMetaType =
     RawParam |
@@ -224,7 +226,7 @@ data Factor =
     DereferenceFactor Identifier LineNumber |
     VarFactor Identifier LineNumber |
     ArrayReferenceFactor Identifier Expression LineNumber |
-    NumberFactor Int LineNumber |
+    NumberFactor Int32 LineNumber |
     StringFactor String LineNumber
     deriving (Eq, Show)
 -- 29. FUN_CALL -> <id> ( ARGS )
