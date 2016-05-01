@@ -268,7 +268,7 @@ foldConstantsT (SimpleT f n) = result where
 foldConstantsT (MulT t ModMulOp f _) = result where
     result = case (constLeft, constRight) of
         (Just n, Just n') -> if n' /= 0
-            then toConstant (n `mod` n')
+            then toConstant (n `rem` n')
             else nonOptimizedResult
         (Nothing, Just 1) -> toConstant 0
         _ -> nonOptimizedResult
@@ -280,7 +280,7 @@ foldConstantsT (MulT t ModMulOp f _) = result where
 foldConstantsT (MulT t DivMulOp f _) = result where
     result = case (constLeft, constRight) of
         (Just n, Just n') -> if n' /= 0
-            then toConstant (n `div` n')
+            then toConstant (n `quot` n')
             else nonOptimizedResult
         (Nothing, Just 1) -> left
         (Nothing, Nothing) -> case left of
