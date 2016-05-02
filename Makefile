@@ -51,6 +51,7 @@ clean:
 	rm -f $(MAINDIR)/Token $(MAINDIR)/Scanner $(MAINDIR)/ScannerTest
 	rm -f $(MAINDIR)/Grammar $(MAINDIR)/Parser $(MAINDIR)/ParserTest
 	rm -f $(MAINDIR)/Types $(MAINDIR)/Analyzer $(MAINDIR)/AnalyzerTest
+	rm -f $(MAINDIR)/Optimizer $(MAINDIR)/OptimizerTest
 	rm -f $(MAINDIR)/Compiler $(MAINDIR)/bpl
 	rm -f $(MAINDIR)/*.s
 
