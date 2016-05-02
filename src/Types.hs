@@ -1,13 +1,14 @@
 module Types where
 
 import qualified Data.Map as Map
+import Data.Int (Int32)
 
 type LineNumber = Int
 
 data VarMetaType =
     RawVar |
     PointerVar |
-    ArrayVar Int
+    ArrayVar Int32
     deriving (Eq, Show)
 
 data VarRawType =
@@ -243,7 +244,7 @@ data Factor =
     DereferenceFactor Identifier NodeType |
     VarFactor Identifier NodeType |
     ArrayReferenceFactor Identifier Expression NodeType |
-    NumberFactor Int NodeType |
+    NumberFactor Int32 NodeType |
     StringFactor String NodeType
     deriving (Eq, Show)
 

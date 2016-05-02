@@ -15,6 +15,8 @@ module Parser where
 import Token
 import Grammar
 
+import Data.Int (Int32)
+
 -- IDEA: General structure of parsing functions:
 --   Only ever take in Token list and (except for top level function) callback
 -- for parameters.
@@ -527,15 +529,15 @@ parseArgList cb tokens line = parseExpression (helper []) tokens where
     helper acc e (Token T_COMMA _ _:ts) = parseExpression (helper (e:acc)) ts
     helper acc e ts = cb (ArgList (reverse (e:acc)) line) ts
 
-parseInt :: String -> LineNumber -> Int
+parseInt :: String -> LineNumber -> Int32
 parseInt s l = result where
-    n = read s :: Int
+    n = read s :: Integer
     result
-        | n > 2^(31 :: Int) - 1 =
+        | n > toInteger (maxBound :: Int32) =
             error $ "Line " ++ show l ++ ": " ++ s ++ ": numeric literal too large"
-        | n < -2^(31 :: Int) =
+        | n < toInteger (minBound :: Int32) =
             error $ "Line " ++ show l ++ ": " ++ s ++ ": numeric literal too small"
-        | otherwise = n
+        | otherwise = fromInteger n :: Int32
 
 isTypeSpecifier :: Token -> Bool
 isTypeSpecifier = (`elem` [T_INT, T_STRING, T_VOID]) . tokenType
