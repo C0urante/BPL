@@ -1,5 +1,5 @@
 HC = ghc
-MAINDIR = /home/chris/School/CS331
+MAINDIR = $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 SRCDIR = $(MAINDIR)/src
 BINDIR = $(MAINDIR)/bin
 TESTDIR = $(MAINDIR)/test
@@ -56,8 +56,8 @@ clean:
 	rm -f $(MAINDIR)/*.s
 
 rebuild:
-	rm -f bin/objects/*
-	rm -f bin/interfaces/*
+	rm -f $(MAINDIR)/bin/objects/*
+	rm -f $(MAINDIR)/bin/interfaces/*
 
 cleartests:
 	rm -f $(TESTDIR)/asm/*
